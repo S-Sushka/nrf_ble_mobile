@@ -6,15 +6,17 @@ struct bt_conn *ble_device = nullptr;
 static bool initialized = false;
 static bool connected = false;
 
-static struct bt_data *ptr_new_ad = nullptr; 
-static size_t ptr_new_ad_count = 0; 
-
 static struct k_work restart_adv_work;
-
 
 // *******************************************************************
 // Adverstiments
 // *******************************************************************
+
+static struct bt_le_ext_adv *adv;
+
+static const struct bt_data *ptr_new_ad = nullptr; 
+static size_t ptr_new_ad_count = 0; 
+
 
 const struct bt_le_adv_param adv_params = {
     .options = BT_LE_ADV_OPT_CONN,
@@ -25,14 +27,11 @@ const struct bt_le_adv_param adv_params = {
 const struct bt_data ad[] = 
 {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-    BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
-};
-
-const struct bt_data sd[] = {
     BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
             strlen(CONFIG_BT_DEVICE_NAME)),
-};
 
+    BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)), 
+};
 
 
 // *******************************************************************
@@ -137,20 +136,28 @@ static void restart_adv(struct k_work *work)
     int err = 0;
 
     // Сначала безопасно останавливаем рекламу
-    bt_le_adv_stop();
+    bt_le_ext_adv_stop(adv);
 
     // Запускаем нужную рекламу
     if (ptr_new_ad && ptr_new_ad_count > 0) 
     {
-        err = bt_le_adv_start(&adv_params, ptr_new_ad, ptr_new_ad_count, sd, ARRAY_SIZE(sd));
-        if (err)
-            printk("BT extended advertisement start Failed: %d\n", err); 
+        err = bt_le_ext_adv_set_data(adv, ptr_new_ad, ptr_new_ad_count, NULL, 0);
+        if (err) 
+            printk("BT Advertisement data set Failed: %d\n", err); 
+
+        err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
+        if (err) 
+            printk("BT default adversiment start Failed: %d\n", err); 
     } 
     else 
     {
-        err = bt_le_adv_start(&adv_params, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
-        if (err)
-            printk("BT default advertisement start Failed: %d\n", err); 
+        err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
+        if (err) 
+            printk("BT Advertisement data set Failed: %d\n", err); 
+
+        err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
+        if (err) 
+            printk("BT default adversiment start Failed: %d\n", err); 
     }
 }
 
@@ -159,6 +166,8 @@ int ble_begin(void)
     int err = 0;
     
     k_work_init(&restart_adv_work, restart_adv);
+
+
     err = bt_enable(NULL);
     if (err) 
     {
@@ -166,9 +175,25 @@ int ble_begin(void)
         return err;
     }
 
+	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_CONN, NULL, &adv);
+    if (err) 
+    {
+        printk("BT Advertisement create Failed: %d\n", err); 
+        return err;
+    }
+    
+	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
+    if (err) 
+    {
+        printk("BT Advertisement data set Failed: %d\n", err); 
+        return err;
+    }
+
     bt_gatt_cb_register(&gatt_callbacks);
 
-	err = bt_le_adv_start(&adv_params, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+
+    
+	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
     if (err) 
     {
         printk("BT default adversiment start Failed: %d\n", err); 
@@ -198,16 +223,25 @@ int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t 
         static struct bt_data new_ad[] = 
         {
             BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+            BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
+                strlen(CONFIG_BT_DEVICE_NAME)),
+
             BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_BAS_VAL)),
             BT_DATA(BT_DATA_UUID128_ALL,
-                    service_uuid->val,
-                    16)
+                service_uuid->val,
+                16),
         };
 
         ptr_new_ad = new_ad;
         ptr_new_ad_count = ARRAY_SIZE(new_ad);
 
-        err = bt_le_adv_update_data(ptr_new_ad, ptr_new_ad_count, sd, ARRAY_SIZE(sd));
+        err = bt_le_ext_adv_set_data(adv, ptr_new_ad, ptr_new_ad_count, NULL, 0);
+        if (err) 
+        {
+            printk("BT Advertisement data set Failed: %d\n", err); 
+            return err;
+        }
+
         if (err) printk("BT Add service to adversiment Failed: %d\n", err);
 
         return err;
