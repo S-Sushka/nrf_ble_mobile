@@ -1,0 +1,5 @@
+storage:
+  address: 0xF0000
+  size: 0x10000
+  device: flash_controller
+  region: flash_primary
