@@ -6,6 +6,10 @@ static const struct gpio_dt_spec led0_dev = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpi
 
 
 
+//#define NVS_NEED_CONFIGURE // <-- Загружает настройки в NVS: сохраняет сервисов/характеристик UUID
+
+
+
 // *******************************************************************
 // Создание динамического сервиса MAIN TASK
 // *******************************************************************
@@ -66,12 +70,17 @@ static void BT_NOTIFICATIONS_MAIN_TASK_OUT(const struct bt_gatt_attr *attr, uint
 
 
 // Создание и добавление сервиса
-void ble_prepare_main_task_service()
+int ble_prepare_main_task_service()
 {
-	get_uuid(0, &UUID_MAIN_TASK_SERVICE);
-	get_uuid(1, &UUID_MAIN_TASK_CHARACTERISTIC_IN);
-	get_uuid(2, &UUID_MAIN_TASK_CHARACTERISTIC_OUT);
+	if (get_uuid(0, &UUID_MAIN_TASK_SERVICE)) 
+		return -EFAULT;
 
+	if (get_uuid(1, &UUID_MAIN_TASK_CHARACTERISTIC_IN)) 
+		return -EFAULT;
+	
+	if (get_uuid(2, &UUID_MAIN_TASK_CHARACTERISTIC_OUT)) 
+		return -EFAULT;	
+	
 	MAIN_TASK_CHARACTERITIC_IN =
 		{
 			.uuid = &UUID_MAIN_TASK_CHARACTERISTIC_IN.uuid,
@@ -125,7 +134,7 @@ void ble_prepare_main_task_service()
     	memcpy(MAIN_TASK_ATTRIBUTES, temp, sizeof(temp));
 
 
-	ble_add_service(&UUID_MAIN_TASK_SERVICE, MAIN_TASK_ATTRIBUTES, ARRAY_SIZE(MAIN_TASK_ATTRIBUTES));
+	return ble_add_service(&UUID_MAIN_TASK_SERVICE, MAIN_TASK_ATTRIBUTES, ARRAY_SIZE(MAIN_TASK_ATTRIBUTES));
 }
 
 
@@ -141,9 +150,23 @@ int main(void)
 
 
 	nvs_begin();
+
+#ifdef NVS_NEED_CONFIGURE
+	struct bt_uuid_128 uuids[3] = 
+	{
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E0, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+
+	};
+
+	add_uuid(&uuids[0]);
+	add_uuid(&uuids[1]);
+	add_uuid(&uuids[2]);
+#endif
+
 	ble_prepare_main_task_service();
 	ble_begin();
-
 
 	uint8_t battery_level = 0;
 	uint8_t battery_level_status = 0;

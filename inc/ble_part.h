@@ -12,11 +12,6 @@ extern "C" {
 #include <zephyr/bluetooth/services/bas.h>
 
 
-/*
-    TODO: 
-    Исключить возможность утечки из ble_add_service
-*/
-
 extern struct bt_conn *ble_device;
 
 int ble_begin();

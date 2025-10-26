@@ -1,0 +1,7 @@
+default: nrf_ble_mobile
+build_dir: C:/Users/WIN/Desktop/nrf_ble_mobile/build
+domains:
+  - name: nrf_ble_mobile
+    build_dir: C:/Users/WIN/Desktop/nrf_ble_mobile/build/nrf_ble_mobile
+flash_order:
+  - nrf_ble_mobile

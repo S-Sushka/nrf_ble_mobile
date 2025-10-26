@@ -51,10 +51,10 @@ static void BT_CONNECTED(struct bt_conn *conn, uint8_t err)
 {
     connected = true;
 
-    if (!err)
+    if (err == 0)
     {
         ble_device = bt_conn_ref(conn);
-        printk(" --- BLE --- :  Connected\n\n");
+        printk(" --- BLE --- :  Connected\n");
     } 
     else
         printk(" --- BLE ERR --- :  Bluetooth connected Failed!\n");
@@ -62,7 +62,7 @@ static void BT_CONNECTED(struct bt_conn *conn, uint8_t err)
 
 static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
 {
-    int err = 0;
+    int err= 0;
     connected = false;
 
     if (ble_device) 
@@ -146,15 +146,15 @@ static struct bt_gatt_cb gatt_callbacks = {
 
 static void restart_adv(struct k_work *work)
 {
-    int err;
+    uint8_t err;
 
     bt_le_ext_adv_stop(adv);
 
     err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
-    if (err)
+    if (err < 0)
         printk(" --- BLE ERR --- :  Failed to restart advertising: %d\n", err);
     else
-        printk(" --- BLE --- :  Successful restart advertising\n\n");
+        printk(" --- BLE --- :  Successful restart advertising\n");
 }
 
 
@@ -181,38 +181,38 @@ int fill_advertisement_data()
         return 0;
     }
     else 
-        return ENOSR;
+        return -ENOSR;
 }
 
 int ble_begin(void)
 {
-    int err = 0;
+    int err= 0;
     
     k_work_init(&restart_adv_work, restart_adv);
 
     err = fill_advertisement_data();
-    if (err) 
+    if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Fill advertising with data Failed: %d\n", err);
         return err;
     }
 
     err = bt_enable(NULL);
-    if (err) 
+    if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Bluetooth enable Failed: %d\n", err);
         return err;
     }
 
 	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_CONN, NULL, &adv);
-    if (err) 
+    if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Advertisement create Failed: %d\n", err);
         return err;
     }
     
 	err = bt_le_ext_adv_set_data(adv, ad, ad_count, NULL, 0);
-    if (err) 
+    if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Set data to advertising Failed: %d\n", err);
         return err;
@@ -223,14 +223,14 @@ int ble_begin(void)
 
     
 	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
-    if (err) 
+    if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Begin advetisement start Failed: %d\n", err);
         return err;
     }
 
     initialized = true;
-    printk(" --- BLE --- :  Successful Initialized!\n\n");
+    printk(" --- BLE --- :  Successful Initialized!\n");
     return 0;    
 }
 
@@ -241,11 +241,11 @@ int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t 
     if (initialized) 
     {
         printk(" --- BLE ERR --- :  You can create dynamic services before bt_le_ext_adv_start() only");
-        return EAGAIN;
+        return -EAGAIN;
     }
     else 
     {
-        int err = 0;
+        int err= 0;
 
         // Выделяем место под сервис
         if (dynamic_services_count == 0)
@@ -256,7 +256,7 @@ int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t 
         if (dynamic_services == nullptr) 
         {
            printk(" --- BLE ERR --- :  Find memory to add dynamic GATT service Failed\n");
-            return ENOSR;
+            return -ENOSR;
         }
 
 
@@ -269,7 +269,7 @@ int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t 
         dynamic_services[dynamic_services_count].attr_count = attributes_len;
 
         err = bt_gatt_service_register(&dynamic_services[dynamic_services_count]);   
-        if (err) 
+        if (err < 0) 
         {
             printk(" --- BLE ERR --- :  Register new dynamic GATT service Failed: %d\n", err);
             return err;
@@ -281,7 +281,7 @@ int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t 
         if (ad == nullptr) 
         {
             printk(" --- BLE ERR --- :  Adding new dynamic GATT service to Advertisement Failed: %d\n", err);
-            return ENOSR;
+            return -ENOSR;
         }
         ad_count++;
 
@@ -313,10 +313,10 @@ uint8_t ble_bas_get_battery_level_status()
 
 int ble_bas_set_battery_level(uint8_t value) 
 {
-    int err = 0;
+    int err= 0;
     
     if (!connected)
-        return EAGAIN;
+        return -EAGAIN;
 
     BT_BAS_BatteryLevel = value;
 
@@ -327,10 +327,10 @@ int ble_bas_set_battery_level(uint8_t value)
 
 int ble_bas_set_battery_level_status(uint8_t value) 
 {
-    int err = 0;
+    int err= 0;
     
     if (!connected)
-        return EAGAIN;
+        return -EAGAIN;
 
     BT_BAS_BatteryLevelStatus = value & 0x0F;
 

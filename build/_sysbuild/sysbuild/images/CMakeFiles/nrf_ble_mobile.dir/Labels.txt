@@ -1,0 +1,13 @@
+# Target labels
+ nrf_ble_mobile
+# Source files and their labels
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile-complete.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-build.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-configure.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-download.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-install.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-mkdir.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-patch.rule
+C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-update.rule

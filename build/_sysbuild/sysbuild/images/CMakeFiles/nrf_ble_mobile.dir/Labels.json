@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/CMakeFiles/nrf_ble_mobile-complete.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-build.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-configure.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-download.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-install.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-mkdir.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-patch.rule"
+		},
+		{
+			"file" : "C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/nrf_ble_mobile-prefix/src/nrf_ble_mobile-stamp/nrf_ble_mobile-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"nrf_ble_mobile"
+		],
+		"name" : "nrf_ble_mobile"
+	}
+}
