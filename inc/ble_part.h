@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
@@ -7,15 +11,10 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/services/bas.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
     TODO: 
-    Переписать это всё дело под Extended Avertisement
-    Добавить поддержку HoG, хотя бы просто чтобы оно подключалось
-    Доделать динамическое выделение сервисов через односвязные списки
+    Исключить возможность утечки из ble_add_service
 */
 
 extern struct bt_conn *ble_device;

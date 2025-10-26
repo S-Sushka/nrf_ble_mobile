@@ -130,6 +130,7 @@ void ble_prepare_main_task_service()
 	ble_add_service(&UUID_MAIN_TASK_SERVICE, MAIN_TASK_ATTRIBUTES, ARRAY_SIZE(MAIN_TASK_ATTRIBUTES));
 }
 
+
 int main(void)
 {
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
@@ -138,8 +139,8 @@ int main(void)
 
 
 	nvs_begin();
-	ble_begin();
 	ble_prepare_main_task_service();
+	ble_begin();
 
 
 		int err = 0;
