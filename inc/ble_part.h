@@ -23,6 +23,12 @@ int ble_begin();
 int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t attributes_len);
 
 
+// Обёртки - BAS
+uint8_t ble_bas_get_battery_level();
+uint8_t ble_bas_get_battery_level_status();
+
+int ble_bas_set_battery_level(uint8_t value);
+int ble_bas_set_battery_level_status(uint8_t value);
 
 
 #ifdef __cplusplus

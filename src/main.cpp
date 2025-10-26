@@ -2,25 +2,32 @@
 #include "ble_part.h"
 #include "nvs_part.h"
 
-
 static const struct gpio_dt_spec led0_dev = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
-static const struct gpio_dt_spec btn0_dev = GPIO_DT_SPEC_GET(DT_NODELABEL(button0), gpios);
-
-/*
-	TODO:
-	1) Отображается статусы батареи штатными средствами Android/iOS/macOS - сами данные можно пока отправлять рандомные (главное, чтобы было видно что они меняются раз в 10 сек)	
-	2) Устройство получает данные в характеристику WRITE (Сервис обмена данными) и выводит их в лог
-	3) Устройство возвращает полученные данные в характеристику NOTIFY без каких либо изменений (тем самым протестируем передачу данных различной длина по кругу)	
-	4) Лог
-*/
 
 
 
+// *******************************************************************
+// Создание динамического сервиса MAIN TASK
+// *******************************************************************
 
-// MAIN TASK
+static bt_uuid_128 UUID_MAIN_TASK_SERVICE;
+static bt_uuid_128 UUID_MAIN_TASK_CHARACTERISTIC_IN;
+static bt_uuid_128 UUID_MAIN_TASK_CHARACTERISTIC_OUT;
+
+static struct bt_gatt_chrc MAIN_TASK_CHARACTERITIC_IN;
+static struct bt_gatt_chrc MAIN_TASK_CHARACTERITIC_OUT;
+static struct _bt_gatt_ccc MAIN_TASK_CCC;
+
+static struct bt_gatt_attr MAIN_TASK_ATTRIBUTES[6];
+
+
 static uint8_t BT_MAIN_TASK_In;
 static uint8_t BT_MAIN_TASK_Out;
 
+static bool main_task_notify_out = false;
+
+
+// Коллбэки
 static ssize_t BT_MAIN_TASK_read_state(struct bt_conn *conn,
                                        const struct bt_gatt_attr *attr, void *buf,
                                        uint16_t len, uint16_t offset)
@@ -33,45 +40,37 @@ static ssize_t BT_MAIN_TASK_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags)
 {
-    if (offset != 0 || len != 1) {
+    if (offset != 0 || len != 1)
+	{
+		printk("Too big message! Maximum is 1 byte\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
-    }
+	}
 
     BT_MAIN_TASK_In = *((uint8_t*)buf);
+	printk("Main Task IN New Value: %d\n", BT_MAIN_TASK_In);
+
+	BT_MAIN_TASK_Out = BT_MAIN_TASK_In;
+	if (main_task_notify_out)
+		bt_gatt_notify(ble_device, &MAIN_TASK_ATTRIBUTES[4], &BT_MAIN_TASK_Out, sizeof(BT_MAIN_TASK_Out));
 
     return len;
 }
 
-static void _BT_NOTIFICATIONS(const struct bt_gatt_attr *attr, uint16_t value)
+static void BT_NOTIFICATIONS_MAIN_TASK_OUT(const struct bt_gatt_attr *attr, uint16_t value)
 {
-    printk("Notification %s\n", (value == BT_GATT_CCC_NOTIFY) ? "enabled" : "disabled");
+    bool notify = (value == BT_GATT_CCC_NOTIFY) ? true : false;
+
+    main_task_notify_out = notify;
+	printk(" --- BLE Notification --- :  Main Task OUT Notification %s\n", notify ? "enabled" : "disabled");
 }
 
 
-
-
-
-static bt_uuid_128 UUID_MAIN_TASK_SERVICE;
-static bt_uuid_128 UUID_MAIN_TASK_CHARACTERISTIC_IN;
-static bt_uuid_128 UUID_MAIN_TASK_CHARACTERISTIC_OUT;
-
-static struct bt_gatt_chrc MAIN_TASK_CHARACTERITIC_IN;
-static struct bt_gatt_chrc MAIN_TASK_CHARACTERITIC_OUT;
-static struct _bt_gatt_ccc MAIN_TASK_CCC;
-
-static struct bt_gatt_attr MAIN_TASK_ATTRIBUTES[6];
-
-// *******************************************************************
-// >>> MAIN <<<
-// *******************************************************************
-
+// Создание и добавление сервиса
 void ble_prepare_main_task_service()
 {
 	get_uuid(0, &UUID_MAIN_TASK_SERVICE);
 	get_uuid(1, &UUID_MAIN_TASK_CHARACTERISTIC_IN);
 	get_uuid(2, &UUID_MAIN_TASK_CHARACTERISTIC_OUT);
-
-
 
 	MAIN_TASK_CHARACTERITIC_IN =
 		{
@@ -87,8 +86,7 @@ void ble_prepare_main_task_service()
 			.properties = BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
 		};
 
-	MAIN_TASK_CCC = BT_GATT_CCC_INITIALIZER(_BT_NOTIFICATIONS, NULL, NULL);
-
+	MAIN_TASK_CCC = BT_GATT_CCC_INITIALIZER(BT_NOTIFICATIONS_MAIN_TASK_OUT, NULL, NULL);
 
 
 	struct bt_gatt_attr temp[6] =
@@ -131,10 +129,14 @@ void ble_prepare_main_task_service()
 }
 
 
+
+// *******************************************************************
+// >>> MAIN <<<
+// *******************************************************************
+
 int main(void)
 {
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
-	gpio_pin_configure_dt(&btn0_dev, GPIO_INPUT);
 	gpio_pin_set_dt(&led0_dev, 1);
 
 
@@ -143,26 +145,24 @@ int main(void)
 	ble_begin();
 
 
-		int err = 0;
-	uint8_t count = 0;
-	bool send_notification = false;
+	uint8_t battery_level = 0;
+	uint8_t battery_level_status = 0;
     while (1) 
     {
-        if (gpio_pin_get_dt(&btn0_dev) && !send_notification) 
-		{
-			count++;
+		k_msleep(10000);
 
-			if (ble_device) 
-			{
-				BT_MAIN_TASK_Out = count;
-				err = bt_gatt_notify(ble_device, &MAIN_TASK_ATTRIBUTES[4], &BT_MAIN_TASK_Out, sizeof(BT_MAIN_TASK_Out));
-				if (err != 0)
-					printk("Notify Error: %i\n", err);
-			}
+		if (battery_level >= 100)
+			battery_level = 0;
+		else
+			battery_level += 10;
+		ble_bas_set_battery_level(battery_level);
 
-			send_notification = true;
-		}
-		else if (!gpio_pin_get_dt(&btn0_dev))
-			send_notification = false;
-    }   		
+		if (battery_level_status >= 0x0F)
+			battery_level_status = 0;
+		else
+			battery_level_status++;
+		ble_bas_set_battery_level_status(battery_level_status);	
+    }   	
+
+	return 0;
 }
