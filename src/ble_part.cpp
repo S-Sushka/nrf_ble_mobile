@@ -21,12 +21,26 @@ const struct bt_le_adv_param adv_params = {
     .interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
     .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
 };
+static uint8_t adv_flags = BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR;
 
-static struct bt_data *ad = nullptr; 
-static size_t ad_count = 0;
+static struct bt_data adv_data[4]; 
 
-static struct bt_gatt_service *dynamic_services = nullptr;
-static size_t dynamic_services_count = 0;
+
+// TRANSPORT 
+static bt_gatt_service transport_service;
+
+static struct bt_gatt_chrc TRANSPORT_CHARACTERITIC_IN;
+static struct bt_gatt_chrc TRANSPORT_CHARACTERITIC_OUT;
+static struct _bt_gatt_ccc TRANSPORT_CCC;
+
+static struct bt_gatt_attr TRANSPORT_ATTRIBUTES[6];
+
+
+static uint8_t BT_TRANSPORT_In;
+static uint8_t BT_TRANSPORT_Out;
+
+static bool transport_notify_out = false;
+
 
 // BAS
 static uint8_t BT_BAS_BatteryLevel = 0;
@@ -78,6 +92,46 @@ static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
 
     k_work_submit(&restart_adv_work);
 }
+
+
+// Сервис - TRANSPORT
+static ssize_t BT_TRANSPORT_read_state(struct bt_conn *conn,
+                                       const struct bt_gatt_attr *attr, void *buf,
+                                       uint16_t len, uint16_t offset)
+{
+    const uint8_t *val = (uint8_t*)attr->user_data;
+    return bt_gatt_attr_read(conn, attr, buf, len, offset, val, sizeof(*val));
+}
+
+static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
+                                        const struct bt_gatt_attr *attr, const void *buf,
+                                        uint16_t len, uint16_t offset, uint8_t flags)
+{
+    if (offset != 0 || len != 1)
+	{
+		printk("Too big message! Maximum is 1 byte\n");
+        return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
+	}
+
+    BT_TRANSPORT_In = *((uint8_t*)buf);
+	printk("Transport IN New Value: %d\n", BT_TRANSPORT_In);
+
+	BT_TRANSPORT_Out = BT_TRANSPORT_In;
+	if (transport_notify_out)
+		bt_gatt_notify(ble_device, &TRANSPORT_ATTRIBUTES[4], &BT_TRANSPORT_Out, sizeof(BT_TRANSPORT_Out));
+
+    return len;
+}
+
+// Notification - TRANSPORT
+static void BT_NOTIFICATIONS_TRANSPORT_OUT(const struct bt_gatt_attr *attr, uint16_t value)
+{
+    bool notify = (value == BT_GATT_CCC_NOTIFY) ? true : false;
+
+    transport_notify_out = notify;
+	printk(" --- BLE Notification --- :  Transport OUT Notification %s\n", notify ? "enabled" : "disabled");
+}
+
 
 // Сервис - BAS
 static ssize_t BT_BAS_read_state(struct bt_conn *conn,
@@ -158,45 +212,107 @@ static void restart_adv(struct k_work *work)
 }
 
 
-static uint8_t flags = BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR;
-int fill_advertisement_data() 
+int ble_prepare_transport_service(bt_uuid_128 *transport_service_uuid, 
+            bt_uuid_128 *transport_characteristic_in_uuid, 
+            bt_uuid_128 *transport_characteristic_out_uuid)
 {
-    ad = (bt_data *)k_malloc(3 * sizeof(bt_data));
+	TRANSPORT_CHARACTERITIC_IN =
+		{
+			.uuid = &transport_characteristic_in_uuid->uuid,
+			.value_handle = 0, // Заполнится стеком
+			.properties = BT_GATT_CHRC_WRITE,
+		};
 
-    if (ad != nullptr) 
-    {
-        ad[0].type = BT_DATA_FLAGS;
-        ad[0].data_len = 1;
-        ad[0].data = &flags;
+	TRANSPORT_CHARACTERITIC_OUT =
+		{
+			.uuid = &transport_characteristic_out_uuid->uuid,
+			.value_handle = 0, // Заполнится стеком 
+			.properties = BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+		};
 
-        ad[1].type = BT_DATA_NAME_COMPLETE;
-        ad[1].data_len = strlen(CONFIG_BT_DEVICE_NAME);
-        ad[1].data = (const uint8_t *)CONFIG_BT_DEVICE_NAME;
+	TRANSPORT_CCC = BT_GATT_CCC_INITIALIZER(BT_NOTIFICATIONS_TRANSPORT_OUT, NULL, NULL);
 
-        ad[2].type = BT_DATA_UUID16_ALL;
-        ad[2].data_len = BT_UUID_SIZE_16;
-        ad[2].data = (const uint8_t *)BT_UUID_16_ENCODE(BT_UUID_BAS_VAL);
+	struct bt_gatt_attr temp[6] =
+	{
+			BT_GATT_PRIMARY_SERVICE(transport_service_uuid),
 
-        ad_count = 3;
-        return 0;
-    }
-    else 
-        return -ENOSR;
+			// Характеристика IN
+			BT_GATT_ATTRIBUTE(BT_UUID_GATT_CHRC,
+							  BT_GATT_PERM_READ,
+							  bt_gatt_attr_read_chrc,
+							  NULL,
+							  &TRANSPORT_CHARACTERITIC_IN),
+
+			BT_GATT_ATTRIBUTE(TRANSPORT_CHARACTERITIC_IN.uuid,
+							  BT_GATT_PERM_READ | BT_GATT_PERM_WRITE,
+							  BT_TRANSPORT_read_state, BT_TRANSPORT_write_state, &BT_TRANSPORT_In),
+
+			// Характеристика OUT
+			BT_GATT_ATTRIBUTE(BT_UUID_GATT_CHRC,
+							  BT_GATT_PERM_READ,
+							  bt_gatt_attr_read_chrc,
+							  NULL,
+							  &TRANSPORT_CHARACTERITIC_OUT),
+
+			BT_GATT_ATTRIBUTE(TRANSPORT_CHARACTERITIC_OUT.uuid,
+							  BT_GATT_PERM_READ,
+							  BT_TRANSPORT_read_state, BT_TRANSPORT_write_state, &BT_TRANSPORT_Out),
+
+			// Настройка Notification
+			BT_GATT_ATTRIBUTE(BT_UUID_GATT_CCC,
+							  BT_GATT_PERM_READ | BT_GATT_PERM_WRITE,
+							  bt_gatt_attr_read_ccc,
+							  bt_gatt_attr_write_ccc,
+							  &TRANSPORT_CCC),
+	};
+	memcpy(TRANSPORT_ATTRIBUTES, temp, sizeof(temp));
+
+    transport_service.attrs = TRANSPORT_ATTRIBUTES;
+    transport_service.attr_count = ARRAY_SIZE(TRANSPORT_ATTRIBUTES);
+
+    return bt_gatt_service_register(&transport_service);
 }
 
-int ble_begin(void)
+
+int ble_begin(bt_uuid_128 *transport_service_uuid, 
+            bt_uuid_128 *transport_characteristic_in_uuid, 
+            bt_uuid_128 *transport_characteristic_out_uuid)
 {
     int err= 0;
     
     k_work_init(&restart_adv_work, restart_adv);
 
-    err = fill_advertisement_data();
-    if (err < 0) 
+
+    // Добавляем транспортный сервис
+    err = ble_prepare_transport_service(transport_service_uuid, transport_characteristic_in_uuid, transport_characteristic_out_uuid);
+    if (err < 0)
     {
-        printk(" --- BLE ERR --- :  Fill advertising with data Failed: %d\n", err);
+        printk(" --- BLE ERR --- :  Register Transport Service Failed: %d\n", err);
         return err;
     }
+    else 
+        printk(" --- BLE --- :  Transport Service successful added\n");
 
+
+    // Настраиваем Advertisement
+    adv_data[0].type = BT_DATA_FLAGS;
+    adv_data[0].data_len = 1;
+    adv_data[0].data = &adv_flags;
+
+    adv_data[1].type = BT_DATA_NAME_COMPLETE;
+    adv_data[1].data_len = strlen(CONFIG_BT_DEVICE_NAME);
+    adv_data[1].data = (const uint8_t *)CONFIG_BT_DEVICE_NAME;
+
+    adv_data[2].type = BT_DATA_UUID16_ALL;
+    adv_data[2].data_len = BT_UUID_SIZE_16;
+    adv_data[2].data = (const uint8_t *)BT_UUID_16_ENCODE(BT_UUID_BAS_VAL);
+
+    adv_data[3].type = BT_DATA_UUID128_SOME;
+    adv_data[3].data_len = BT_UUID_SIZE_128;
+    adv_data[3].data = transport_service_uuid->val;    
+
+
+    // Инициализируем и запускаем стек
     err = bt_enable(NULL);
     if (err < 0) 
     {
@@ -210,8 +326,9 @@ int ble_begin(void)
         printk(" --- BLE ERR --- :  Advertisement create Failed: %d\n", err);
         return err;
     }
-    
-	err = bt_le_ext_adv_set_data(adv, ad, ad_count, NULL, 0);
+
+
+	err = bt_le_ext_adv_set_data(adv, adv_data, ARRAY_SIZE(adv_data), NULL, 0);
     if (err < 0) 
     {
         printk(" --- BLE ERR --- :  Set data to advertising Failed: %d\n", err);
@@ -221,7 +338,6 @@ int ble_begin(void)
     bt_gatt_cb_register(&gatt_callbacks);
 
 
-    
 	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
     if (err < 0) 
     {
@@ -232,66 +348,6 @@ int ble_begin(void)
     initialized = true;
     printk(" --- BLE --- :  Successful Initialized!\n");
     return 0;    
-}
-
-
-
-int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t attributes_len)
-{
-    if (initialized) 
-    {
-        printk(" --- BLE ERR --- :  You can create dynamic services before bt_le_ext_adv_start() only");
-        return -EAGAIN;
-    }
-    else 
-    {
-        int err= 0;
-
-        // Выделяем место под сервис
-        if (dynamic_services_count == 0)
-            dynamic_services = (bt_gatt_service *)k_malloc(1 * sizeof(bt_gatt_service));
-        else
-            dynamic_services = (bt_gatt_service *)k_realloc(dynamic_services, (dynamic_services_count+1) * sizeof(bt_gatt_service));
-
-        if (dynamic_services == nullptr) 
-        {
-           printk(" --- BLE ERR --- :  Find memory to add dynamic GATT service Failed\n");
-            return -ENOSR;
-        }
-
-
-        bt_gatt_service test_service = {
-            .attrs = attributes,
-            .attr_count = attributes_len,
-        };
-
-        dynamic_services[dynamic_services_count].attrs = attributes;
-        dynamic_services[dynamic_services_count].attr_count = attributes_len;
-
-        err = bt_gatt_service_register(&dynamic_services[dynamic_services_count]);   
-        if (err < 0) 
-        {
-            printk(" --- BLE ERR --- :  Register new dynamic GATT service Failed: %d\n", err);
-            return err;
-        }
-        dynamic_services_count++;
-
-        // Добавляем сервис в Adversiment
-        ad = (bt_data *)k_realloc(ad, (ad_count+1) * sizeof(bt_data));
-        if (ad == nullptr) 
-        {
-            printk(" --- BLE ERR --- :  Adding new dynamic GATT service to Advertisement Failed: %d\n", err);
-            return -ENOSR;
-        }
-        ad_count++;
-
-        ad[ad_count-1].type = BT_DATA_UUID128_SOME;
-        ad[ad_count-1].data_len = BT_UUID_SIZE_128;
-        ad[ad_count-1].data = service_uuid->val;
-
-        printk(" --- BLE --- :  New dynamic GATT service successful added\n");
-        return 0;
-    }
 }
 
 
