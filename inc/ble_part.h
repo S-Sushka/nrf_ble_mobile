@@ -1,8 +1,13 @@
-#pragma once
+/*
+ * ble_part.h
+ * inc
+ * 
+ * Copyright (C) 2025 by UHF Solutions
+ * All right reserved
+ */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+
+#pragma once
 
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -25,8 +30,3 @@ uint8_t ble_bas_get_battery_level_status();
 
 int ble_bas_set_battery_level(uint8_t value);
 int ble_bas_set_battery_level_status(uint8_t value);
-
-
-#ifdef __cplusplus
-}
-#endif

@@ -1,3 +1,3 @@
-SDK:               nRF Connect SDK v3.0.1
+SDK:               nRF Connect SDK v3.1.1
 
-Toolchain:         nRF Connect SDK Toolchain v3.0.2
+Toolchain:         nRF Connect SDK Toolchain v3.1.1
