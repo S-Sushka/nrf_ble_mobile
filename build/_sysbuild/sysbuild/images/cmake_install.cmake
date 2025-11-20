@@ -1,4 +1,4 @@
-# Install script for directory: C:/ncs/v3.0.1/zephyr/share/sysbuild/images
+# Install script for directory: C:/ncs/v3.1.1/zephyr/share/sysbuild/images
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -35,6 +35,11 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
   include("C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/bootloader/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/sysbuild/images/firmware_loader/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)

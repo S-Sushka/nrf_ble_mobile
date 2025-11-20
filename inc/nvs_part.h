@@ -20,12 +20,12 @@ extern "C" {
 #define STORAGE_PARTITION storage
 
 int nvs_begin();
-void nvs_test(bt_uuid_128 *uuid);
+void nvs_test(struct bt_uuid_128 *uuid);
 
 // Стек UUID динамических BLE-сервисов
 uint8_t get_uuids_count();
-int get_uuid(uint8_t index, bt_uuid_128 *uuid);
-int add_uuid(bt_uuid_128 *uuid);
+int get_uuid(uint8_t index, struct bt_uuid_128 *uuid);
+int add_uuid(struct bt_uuid_128 *uuid);
 int delete_last_uuid();
 
 

@@ -1,16 +1,18 @@
 app:
   address: 0x0
-  end_address: 0xea000
+  end_address: 0xee000
   region: flash_primary
-  size: 0xea000
-nvs_storage:
-  address: 0xea000
+  size: 0xee000
+settings_storage:
+  address: 0xee000
   end_address: 0xf0000
   placement:
+    align:
+      start: 0x1000
     before:
     - end
   region: flash_primary
-  size: 0x6000
+  size: 0x2000
 sram_primary:
   address: 0x20000000
   end_address: 0x20040000

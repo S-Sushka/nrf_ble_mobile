@@ -11,12 +11,13 @@ extern "C" {
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/services/bas.h>
 
+#include "PROTOCOL.h"
 
-extern struct bt_conn *ble_device;
 
-int ble_begin(bt_uuid_128 *transport_service_uuid, 
-            bt_uuid_128 *transport_characteristic_in_uuid, 
-            bt_uuid_128 *transport_characteristic_out_uuid);
+int ble_begin(struct bt_uuid_128 *transport_service_uuid, 
+            struct bt_uuid_128 *transport_characteristic_in_uuid, 
+            struct bt_uuid_128 *transport_characteristic_out_uuid);
+
 
 // Обёртки - BAS
 uint8_t ble_bas_get_battery_level();

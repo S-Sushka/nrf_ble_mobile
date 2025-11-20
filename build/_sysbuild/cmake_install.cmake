@@ -1,4 +1,4 @@
-# Install script for directory: C:/ncs/v3.0.1/zephyr/share/sysbuild/template
+# Install script for directory: C:/ncs/v3.1.1/zephyr/share/sysbuild/template
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
