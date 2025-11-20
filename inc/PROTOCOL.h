@@ -1,9 +1,13 @@
+/*
+ * PROTOCOL.h
+ * inc
+ * 
+ * Copyright (C) 2025 by UHF Solutions
+ * All right reserved
+ */
+
+
 #pragma once
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 #include <stdint.h>
 
@@ -36,7 +40,3 @@ typedef struct
 
 uint16_t calculateCRC(uint8_t *data, uint16_t length);  // End Mark учитывается, Преамбула НЕ учитывается
 int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
-
-#ifdef __cplusplus
-}
-#endif

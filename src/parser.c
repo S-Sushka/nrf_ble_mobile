@@ -1,3 +1,12 @@
+/*
+ * parser.c
+ * src
+ * 
+ * Copyright (C) 2025 by UHF Solutions
+ * All right reserved
+ */
+
+
 #include "parser.h"
 
 // DEBUG

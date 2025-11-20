@@ -1,15 +1,13 @@
+/*
+ * usb_part.c
+ * src
+ * 
+ * Copyright (C) 2025 by UHF Solutions
+ * All right reserved
+ */
+
+
 #include "usb_part.h"
-
-
-#include <stdio.h>
-#include <string.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/uart.h>
-#include <zephyr/kernel.h>
-#include <zephyr/sys/ring_buffer.h>
-
-#include <zephyr/usb/usb_device.h>
-#include <zephyr/usb/usbd.h>
 
 
 const struct device *const uart_cdc_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
