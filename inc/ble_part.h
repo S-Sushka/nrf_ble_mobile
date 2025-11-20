@@ -14,9 +14,9 @@ extern "C" {
 
 extern struct bt_conn *ble_device;
 
-int ble_begin();
-int ble_add_service(bt_uuid_128 *service_uuid, bt_gatt_attr *attributes, size_t attributes_len);
-
+int ble_begin(bt_uuid_128 *transport_service_uuid, 
+            bt_uuid_128 *transport_characteristic_in_uuid, 
+            bt_uuid_128 *transport_characteristic_out_uuid);
 
 // Обёртки - BAS
 uint8_t ble_bas_get_battery_level();

@@ -17,6 +17,6 @@ cmake:
      - C:/Users/WIN/Desktop/nrf_ble_mobile/build/_sysbuild/empty.conf
 version: 0.1.0
 west:
-  command: C:\ncs\toolchains\0b393f9e1b\opt\bin\Scripts\west build --build-dir c:/Users/WIN/Desktop/nrf_ble_mobile/build c:/Users/WIN/Desktop/nrf_ble_mobile --pristine --board nrf52840dk/nrf52840 --sysbuild --
+  command: C:\ncs\toolchains\0b393f9e1b\opt\bin\Scripts\west build --build-dir c:/Users/WIN/Desktop/nrf_ble_mobile/build c:/Users/WIN/Desktop/nrf_ble_mobile --pristine --board nrf52840dk/nrf52840
   topdir: c:\ncs\v3.0.1
   version: 1.2.0
