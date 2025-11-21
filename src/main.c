@@ -8,34 +8,19 @@
 
 
 #include "main.h"
+
+#include "parser.h"
 #include "ble_part.h"
 #include "usb_part.h"
-
-/*
-	TODO:
-	1) BLE. Добавить и потестить возможность подключения нескольких устройств
-	2) Реализовать тестовый пример для всего этого дела из текста задания - https://jira.svc.uhfs.ru/browse/UW-9
-*/
 
 
 
 static const struct gpio_dt_spec led0_dev = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 
-extern struct k_msgq parser_queue;  // Очередь парсера
-
 struct bt_uuid_128 UUID_TRANSPORT_SERVICE;
 struct bt_uuid_128 UUID_TRANSPORT_CHARACTERISTIC_IN;
 struct bt_uuid_128 UUID_TRANSPORT_CHARACTERISTIC_OUT;
-
-
-
-void _debug_print_uuid(struct bt_uuid_128 *uuid) 
-{
-    for (int i = 0; i < 16; i++)
-        printk("%x", uuid->val[i]);
-    printk("\n");
-}
 
 
 static int settings_bt_load(const char *key, size_t len,
@@ -43,20 +28,21 @@ static int settings_bt_load(const char *key, size_t len,
 {
     if (strcmp(key, "uuid/transport/service") == 0) 
 	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128)) == sizeof(struct bt_uuid_128)) 
-			_debug_print_uuid(&UUID_TRANSPORT_SERVICE);		
+        if (read_cb(cb_arg, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
+			printk(" --- BLE UUID ERR --- : Bad Service UUID!\n");
     }
 
     if (strcmp(key, "uuid/transport/in") == 0) 
 	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128)) == sizeof(struct bt_uuid_128)) 
-			_debug_print_uuid(&UUID_TRANSPORT_CHARACTERISTIC_IN);		
+        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
+			printk(" --- BLE UUID ERR --- : Bad IN Characteristic UUID!\n");
     }
 	
     if (strcmp(key, "uuid/transport/out") == 0) 
 	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128)) == sizeof(struct bt_uuid_128)) 
-			_debug_print_uuid(&UUID_TRANSPORT_CHARACTERISTIC_OUT);		
+        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
+			printk(" --- BLE UUID ERR --- : Bad OUT Characteristic UUID!\n");
+				
     }	
 
     return 0;
@@ -70,6 +56,7 @@ SETTINGS_STATIC_HANDLER_DEFINE(settings_bt_handler, "bt",
 // >>> MAIN <<<
 // *******************************************************************
 
+void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet);
 void main_thread(void)
 {	
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
@@ -98,25 +85,74 @@ void main_thread(void)
 
 	
 	
-	// uint8_t battery_level = 0;
-	// uint8_t battery_level_status = 0;
+	uint8_t battery_level = 0;
+	uint8_t battery_level_status = 0;
+
+	tUniversalMessageTX notify_packet;
+	uint8_t notify_data[MESSAGE_BUFFER_SIZE];
+	notify_packet.data = notify_data;
+
+	int err = 0;
 
     while (1) 
     {
-		k_msleep(1000);
-		// if (battery_level >= 100)
-		// 	battery_level = 0;
-		// else
-		// 	battery_level += 10;
-		// ble_bas_set_battery_level(battery_level);
+		// BAS
+		if (battery_level >= 100)
+			battery_level = 0;
+		else
+			battery_level += 10;
+		ble_bas_set_battery_level(battery_level);
 
-		// if (battery_level_status >= 0x0F)
-		// 	battery_level_status = 0;
-		// else
-		// 	battery_level_status++;
-		// ble_bas_set_battery_level_status(battery_level_status);	
+		if (battery_level_status >= 0x0F)
+			battery_level_status = 0;
+		else
+			battery_level_status++;
+		ble_bas_set_battery_level_status(battery_level_status);	
+
+		// TRANSPORT
+		incrementTestNotifyPacket(&notify_packet);
+		
+		notify_packet.source = MESSAGE_SOURCE_USB;
+		err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
+        if (err != 0) printk(" --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+
+		for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
+		{
+			notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
+			err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
+        	if (err != 0) printk(" --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
+		}
+
+		k_msleep(10000);
     }   	
 }
 
-K_THREAD_DEFINE(main_thread_id, 1024, main_thread, NULL, NULL, NULL,
-		0, 0, 0);
+K_THREAD_DEFINE(main_thread_id, THREAD_STACK_SIZE_MAIN, main_thread, NULL, NULL, NULL,
+		THREAD_PRIORITY_MAIN, 0, 0);
+
+		
+
+void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet) 
+{
+	static uint8_t TestNotifyValue = 255;
+	TestNotifyValue++;
+
+	notify_packet->data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
+	notify_packet->data[PROTOCOL_INDEX_MT] 			= PROTOCOL_MT_NOTIFY;
+	notify_packet->data[PROTOCOL_INDEX_MC] 			= 0;
+
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN] 		= 0;
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN+1] 	= 1;
+
+	notify_packet->data[PROTOCOL_INDEX_PL_START] 	= TestNotifyValue;
+
+	notify_packet->data[PROTOCOL_INDEX_PL_START+1] 	= PROTOCOL_END_MARK;
+
+	uint16_t crcCalculatedBuf = calculateCRC(notify_packet->data, PROTOCOL_INDEX_PL_START+2);
+	notify_packet->data[PROTOCOL_INDEX_PL_START+2] 	= crcCalculatedBuf & 0x00FF;
+	crcCalculatedBuf >>= 8;
+	notify_packet->data[PROTOCOL_INDEX_PL_START+3] 	= crcCalculatedBuf & 0x00FF;
+
+	notify_packet->length = 9;
+}
+

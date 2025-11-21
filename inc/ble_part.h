@@ -19,6 +19,12 @@
 #include "PROTOCOL.h"
 
 
+#define THREAD_STACK_SIZE_BLE   2048
+#define THREAD_PRIORITY_BLE     7
+
+
+extern struct k_msgq ble_queue_tx;  // Очередь отправки пакетов по BLE
+
 int ble_begin(struct bt_uuid_128 *transport_service_uuid, 
             struct bt_uuid_128 *transport_characteristic_in_uuid, 
             struct bt_uuid_128 *transport_characteristic_out_uuid);
@@ -28,5 +34,5 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
 uint8_t ble_bas_get_battery_level();
 uint8_t ble_bas_get_battery_level_status();
 
-int ble_bas_set_battery_level(uint8_t value);
-int ble_bas_set_battery_level_status(uint8_t value);
+void ble_bas_set_battery_level(uint8_t value);
+void ble_bas_set_battery_level_status(uint8_t value);

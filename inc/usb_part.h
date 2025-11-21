@@ -21,4 +21,11 @@
 
 #include "PROTOCOL.h"
 
+
+#define THREAD_STACK_SIZE_USB   2048
+#define THREAD_PRIORITY_USB     7
+
+
+extern struct k_msgq usb_queue_tx;  // Очередь отправки пакетов по USB
+
 int usb_begin();
