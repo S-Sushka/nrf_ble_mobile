@@ -39,7 +39,6 @@ static void interrupt_handler(const struct device *dev, void *user_data)
 	{
         while (uart_fifo_read(dev, &byteBuf, 1)) 
 		{
-
 				if (!buildPacket) 
 				{
 					if (byteBuf == PROTOCOL_PREAMBLE)
@@ -59,39 +58,40 @@ static void interrupt_handler(const struct device *dev, void *user_data)
 
 				currentPoolBufferRX_USB->data[ currentPoolBufferRX_USB->length ] = byteBuf;
 
-				if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN_START) // LEN MSB
+				if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN) // LEN MSB
 				{
 					lenPayloadBuf = byteBuf;
 					lenPayloadBuf <<= 8;
 				}
-				else if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN_START + 1) // LEN LSB
+				else if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
 				{
 					lenPayloadBuf |= byteBuf;
 				}
-				else if (currentPoolBufferRX_USB->length > PROTOCOL_INDEX_PL_LEN_START + 1)
+				else if (currentPoolBufferRX_USB->length > PROTOCOL_INDEX_PL_LEN + 1)
 				{
-					if (currentPoolBufferRX_USB->length >= lenPayloadBuf + PROTOCOL_INDEX_HEAD_LENGTH) 
+					if (currentPoolBufferRX_USB->length >= lenPayloadBuf + PROTOCOL_INDEX_PL_START) 
 					{
-						if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_HEAD_LENGTH) // End Mark
+						if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START) // End Mark
 						{
 							if (byteBuf != PROTOCOL_END_MARK) 
 								printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
 						}
-						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_HEAD_LENGTH+1) // CRC MSB 
+						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+1) // CRC MSB 
 						{
 							crcValueBuf = byteBuf;
 							crcValueBuf <<= 8;
 						}
-						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_HEAD_LENGTH+2) // CRC LSB 
+						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+2) // CRC LSB 
 						{
 							crcValueBuf |= byteBuf;
 
-							uint16_t crcCalculatedBuf = calculateCRC(currentPoolBufferRX_USB->data, lenPayloadBuf+PROTOCOL_INDEX_HEAD_LENGTH+1);
+							uint16_t crcCalculatedBuf = calculateCRC(currentPoolBufferRX_USB->data, lenPayloadBuf+PROTOCOL_INDEX_PL_START+1);
 
 							if (crcValueBuf != crcCalculatedBuf) 
 								printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
 
 
+							currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
 							err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
 							if (err != 0)
 								printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
@@ -135,12 +135,29 @@ int usb_begin()
 	uart_irq_rx_enable(uart_cdc_dev);
 
 
-	// // Шлём сообщение по USB CDC UART
-	// uint8_t buf[14] = "Hello, World!";
-	// for (int i = 0; i < 13; i++)
-	// 	uart_poll_out(uart_cdc_dev, buf[i]);
-
-
 	printk(" --- USB CDC --- :  Successful Initialized!\n");
 	return 0;
 }
+
+
+
+// *******************************************************************
+// Поток Интерфейса
+// *******************************************************************
+
+K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessageTX), 4, 1);
+
+void usb_thread(void)
+{	
+	tUniversalMessageTX pkt;
+
+    while (1) 
+    {
+		k_msgq_get(&usb_queue_tx, &pkt, K_FOREVER);
+		for (int i = 0; i < pkt.length; i++)
+			uart_poll_out(uart_cdc_dev, pkt.data[i]);
+    }   	
+}
+
+K_THREAD_DEFINE(usb_thread_id, THREAD_STACK_SIZE_USB, usb_thread, NULL, NULL, NULL,
+		THREAD_PRIORITY_USB, 0, 0);

@@ -6,6 +6,13 @@
  * All right reserved
  */
 
+#pragma once
 
 #include <zephyr/kernel.h>
 #include "PROTOCOL.h"
+
+
+extern struct k_msgq parser_queue;  // Очередь парсера
+
+
+void _DEBUG_printBuffer(const char *prefix, uint8_t *data, uint16_t length);
