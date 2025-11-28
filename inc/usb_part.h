@@ -28,4 +28,4 @@
 
 extern struct k_msgq usb_queue_tx;  // Очередь отправки пакетов по USB
 
-int usb_begin();
+int usb_begin(uint16_t rx_timeout_ms);

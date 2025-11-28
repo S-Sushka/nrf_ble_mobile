@@ -33,7 +33,7 @@ void parser_thread()
         k_msgq_get(&parser_queue, &pkt, K_FOREVER);
         _DEBUG_printBuffer("RX", pkt->data, pkt->length);
 
-        if (pkt->data[PROTOCOL_INDEX_MT] == PROTOCOL_MT_COMMAND) 
+        if (pkt->data[PROTOCOL_INDEX_MT] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
         {
             pkt_echo.source = pkt->source;
             pkt_echo.length = pkt->length;
@@ -44,7 +44,7 @@ void parser_thread()
             uint16_t payloadLenBuf = 0;
 
 
-            pkt_echo.data[PROTOCOL_INDEX_MT] = PROTOCOL_MT_ANSWER;
+            pkt_echo.data[PROTOCOL_INDEX_MT] = PROTOCOL_MSG_TYPE_PR_ANSWER;
 
             payloadLenBuf = pkt_echo.data[PROTOCOL_INDEX_PL_LEN];
             payloadLenBuf <<= 8;

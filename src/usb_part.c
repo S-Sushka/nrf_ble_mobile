@@ -10,8 +10,17 @@
 #include "usb_part.h"
 
 
+
 const struct device *const uart_cdc_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 
+
+static void usb_rx_handler(const struct device *dev, void *user_data);
+static void usb_timeout_handler(struct k_work *work);
+
+K_WORK_DELAYABLE_DEFINE(usb_timeout_work, usb_timeout_handler);
+
+
+static uint16_t USB_RX_TIMEOUT;
 
 static tUniversalMessageRX poolBuffersRX_USB[COUNT_USB_RX_POOL_BUFFERS];  // Буферы приёма
 static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;               // Текущий Буфер
@@ -20,94 +29,7 @@ extern struct k_msgq parser_queue;  // Очередь парсера
 
 
 
-static void interrupt_handler(const struct device *dev, void *user_data)
-{
-	ARG_UNUSED(user_data);
-
-    static uint8_t byteBuf;
-
-    static uint16_t lenPayloadBuf;
-    static uint16_t crcValueBuf;
-
-    static uint8_t buildPacket = 0;
-
-    int err = 0; 
-
-
-    // Проверяем, есть ли событие приёма
-    if (uart_irq_update(dev) && uart_irq_rx_ready(dev)) 
-	{
-        while (uart_fifo_read(dev, &byteBuf, 1)) 
-		{
-				if (!buildPacket) 
-				{
-					if (byteBuf == PROTOCOL_PREAMBLE)
-					{
-						if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_BLE_RX_POOL_BUFFERS) == 0)
-						{
-							buildPacket = 1;
-							currentPoolBufferRX_USB->length = 0;
-							currentPoolBufferRX_USB->inUse = 1;
-						}
-						else 
-							printk(" --- USB ERR --- : There are no free buffers!\n");
-					}
-					else
-						continue;
-				}
-
-				currentPoolBufferRX_USB->data[ currentPoolBufferRX_USB->length ] = byteBuf;
-
-				if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN) // LEN MSB
-				{
-					lenPayloadBuf = byteBuf;
-					lenPayloadBuf <<= 8;
-				}
-				else if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
-				{
-					lenPayloadBuf |= byteBuf;
-				}
-				else if (currentPoolBufferRX_USB->length > PROTOCOL_INDEX_PL_LEN + 1)
-				{
-					if (currentPoolBufferRX_USB->length >= lenPayloadBuf + PROTOCOL_INDEX_PL_START) 
-					{
-						if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START) // End Mark
-						{
-							if (byteBuf != PROTOCOL_END_MARK) 
-								printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
-						}
-						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+1) // CRC MSB 
-						{
-							crcValueBuf = byteBuf;
-							crcValueBuf <<= 8;
-						}
-						else if (currentPoolBufferRX_USB->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+2) // CRC LSB 
-						{
-							crcValueBuf |= byteBuf;
-
-							uint16_t crcCalculatedBuf = calculateCRC(currentPoolBufferRX_USB->data, lenPayloadBuf+PROTOCOL_INDEX_PL_START+1);
-
-							if (crcValueBuf != crcCalculatedBuf) 
-								printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
-
-
-							currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
-							err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
-							if (err != 0)
-								printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
-
-							buildPacket = 0; // Конец
-						}                
-					}
-				}
-
-				currentPoolBufferRX_USB->length++;
-        }
-    }	
-}
-
-
-int usb_begin() 
+int usb_begin(uint16_t rx_timeout_ms) 
 {
 	int err = 0;
 
@@ -125,8 +47,10 @@ int usb_begin()
 		return err;
 	}
 
+	USB_RX_TIMEOUT = rx_timeout_ms;
+
 	// Устанавливаем и включаем прерывание
-	err = uart_irq_callback_set(uart_cdc_dev, interrupt_handler);
+	err = uart_irq_callback_set(uart_cdc_dev, usb_rx_handler);
 	if (err != 0) 
 	{
 		printk(" --- USB CDC ERR --- :\tRX Callback set Failed\n");
@@ -139,6 +63,106 @@ int usb_begin()
 	return 0;
 }
 
+static uint8_t USB_buildPacket = 0;
+static void usb_rx_handler(const struct device *dev, void *user_data)
+{
+	ARG_UNUSED(user_data);
+
+    static uint8_t byteBuf;
+
+    static uint16_t lenPayloadBuf;
+    static uint16_t crcValueBuf;
+
+    int err = 0; 
+
+
+    // Проверяем, есть ли событие приёма
+    if (uart_irq_update(dev) && uart_irq_rx_ready(dev)) 
+	{
+        while (uart_fifo_read(dev, &byteBuf, 1)) 
+		{
+			if (!USB_buildPacket)
+			{
+				if (byteBuf == PROTOCOL_PREAMBLE)
+				{
+					if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_BLE_RX_POOL_BUFFERS) == 0)
+					{
+						USB_buildPacket = 1;
+						currentPoolBufferRX_USB->length = 0;
+						currentPoolBufferRX_USB->inUse = 1;
+					}
+					else
+						printk(" --- USB ERR --- : There are no free buffers!\n");
+				}
+				else
+					continue;
+			}
+
+			currentPoolBufferRX_USB->data[currentPoolBufferRX_USB->length] = byteBuf;
+
+			if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN) // LEN MSB
+			{
+				lenPayloadBuf = byteBuf;
+				lenPayloadBuf <<= 8;
+			}
+			else if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
+			{
+				lenPayloadBuf |= byteBuf;
+			}
+			else if (currentPoolBufferRX_USB->length > PROTOCOL_INDEX_PL_LEN + 1)
+			{
+				if (currentPoolBufferRX_USB->length >= lenPayloadBuf + PROTOCOL_INDEX_PL_START)
+				{
+					if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START) // End Mark
+					{
+						if (byteBuf != PROTOCOL_END_MARK)
+							printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
+					}
+					else if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START + 1) // CRC MSB
+					{
+						crcValueBuf = byteBuf;
+						crcValueBuf <<= 8;
+					}
+					else if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START + 2) // CRC LSB
+					{
+						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+
+						crcValueBuf |= byteBuf;
+
+						uint16_t crcCalculatedBuf = calculateCRC(currentPoolBufferRX_USB->data, lenPayloadBuf + PROTOCOL_INDEX_PL_START + 1);
+
+						if (crcValueBuf != crcCalculatedBuf)
+							printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
+
+						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
+						err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
+						if (err != 0)
+							printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
+
+						USB_buildPacket = 0; // Конец
+						return;
+					}
+				}
+			}
+			currentPoolBufferRX_USB->length++;
+		}
+
+		k_work_schedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем ожидание таймаута
+    }	
+}
+
+static void usb_timeout_handler(struct k_work *work) 
+{
+	USB_buildPacket = 0;
+
+	if (currentPoolBufferRX_USB) 
+	{
+		currentPoolBufferRX_USB->length = 0;
+		currentPoolBufferRX_USB->inUse = 0;
+	}
+
+	// printk(" --- USB DBG --- :  USB Packet RX Timeout\n");
+}
 
 
 // *******************************************************************
