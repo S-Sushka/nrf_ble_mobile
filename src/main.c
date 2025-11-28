@@ -22,10 +22,14 @@ struct bt_uuid_128 UUID_TRANSPORT_SERVICE;
 struct bt_uuid_128 UUID_TRANSPORT_CHARACTERISTIC_IN;
 struct bt_uuid_128 UUID_TRANSPORT_CHARACTERISTIC_OUT;
 
+uint16_t USB_RX_TIMEOUT_VALUE;
+
+
 
 static int settings_bt_load(const char *key, size_t len,
                             settings_read_cb read_cb, void *cb_arg)
 {
+	// UUIDs
     if (strcmp(key, "uuid/transport/service") == 0) 
 	{
         if (read_cb(cb_arg, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
@@ -45,11 +49,20 @@ static int settings_bt_load(const char *key, size_t len,
 				
     }	
 
+	// Time
+    if (strcmp(key, "time/usb_rx_timeout") == 0) 
+	{
+        if (read_cb(cb_arg, &USB_RX_TIMEOUT_VALUE, sizeof(uint16_t)) != sizeof(uint16_t)) 
+			printk(" --- USB ERR --- : Bad USB RX Timeout Value!\n");
+				
+    }		
+
     return 0;
 }
 
 SETTINGS_STATIC_HANDLER_DEFINE(settings_bt_handler, "bt",
                                NULL, settings_bt_load, NULL, NULL);
+
 
 
 // *******************************************************************
@@ -65,23 +78,25 @@ void main_thread(void)
 
 	settings_subsys_init();
 
-	// Сохраняем UUID, если нужно
-	struct bt_uuid_128 uuids[3] = 
+	// Сохраняем настройки, если нужно
+	struct bt_uuid_128 uuid_bufs[3] = 
 	{
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E0, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 	};
+	uint16_t usb_rx_timeout_buf = 150;
 
-	settings_save_one("bt/uuid/transport/service", 	&uuids[0], sizeof(struct bt_uuid_128));
-	settings_save_one("bt/uuid/transport/in", 		&uuids[1], sizeof(struct bt_uuid_128));
-	settings_save_one("bt/uuid/transport/out",	 	&uuids[2], sizeof(struct bt_uuid_128));
+	settings_save_one("bt/uuid/transport/service", 	&uuid_bufs[0], sizeof(struct bt_uuid_128));
+	settings_save_one("bt/uuid/transport/in", 		&uuid_bufs[1], sizeof(struct bt_uuid_128));
+	settings_save_one("bt/uuid/transport/out",	 	&uuid_bufs[2], sizeof(struct bt_uuid_128));
+	settings_save_one("bt/time/usb_rx_timeout",	 	&usb_rx_timeout_buf, sizeof(uint16_t));
 
 	settings_load();
 
 
 	ble_begin(&UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
-	usb_begin();
+	usb_begin(USB_RX_TIMEOUT_VALUE);
 
 	
 	
@@ -138,7 +153,7 @@ void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet)
 	TestNotifyValue++;
 
 	notify_packet->data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
-	notify_packet->data[PROTOCOL_INDEX_MT] 			= PROTOCOL_MT_NOTIFY;
+	notify_packet->data[PROTOCOL_INDEX_MT] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
 	notify_packet->data[PROTOCOL_INDEX_MC] 			= 0;
 
 	notify_packet->data[PROTOCOL_INDEX_PL_LEN] 		= 0;
