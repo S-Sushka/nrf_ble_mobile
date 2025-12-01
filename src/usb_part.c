@@ -98,7 +98,8 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					else
 					{
 						printk(" --- USB ERR --- : There are no free buffers!\n");
-						break;
+						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+						return;
 					}
 				}
 				else
@@ -123,7 +124,9 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					printk(" --- USB ERR --- :  Parse Packet Error: %d\n", err);
 					break;
 				}
-				break;
+
+				k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+				return;
 			}
 			else if (err > 0)
 			{
@@ -131,7 +134,8 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				if (err != 0)
 				{
 					printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
-					break;
+					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+					return;
 				}
 			}
 
