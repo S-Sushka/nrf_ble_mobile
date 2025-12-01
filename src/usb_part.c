@@ -22,8 +22,9 @@ K_WORK_DELAYABLE_DEFINE(usb_timeout_work, usb_timeout_handler);
 
 static uint16_t USB_RX_TIMEOUT;
 
-static tUniversalMessageRX poolBuffersRX_USB[COUNT_USB_RX_POOL_BUFFERS];  // Буферы приёма
-static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;               // Текущий Буфер
+static tUniversalMessageRX poolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
+static uint8_t dataPoolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];	// Данные буферов приёма
+static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;                				// Текущий буфер
 
 extern struct k_msgq parser_queue;  // Очередь парсера
 
@@ -135,6 +136,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 							printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
 
 						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
+						currentPoolBufferRX_USB->length++;
 						err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
 						if (err != 0)
 							printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
@@ -174,6 +176,11 @@ K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessageTX), 4, 1);
 void usb_thread(void)
 {	
 	tUniversalMessageTX pkt;
+
+	for (uint16_t i = 0; i < COUNT_USB_RX_POOL_BUFFERS; i++) 
+	{
+		poolBuffersRX_USB[i].data = dataPoolBuffersRX_USB[i];
+	}
 
     while (1) 
     {

@@ -36,7 +36,7 @@ typedef struct
 {
 	tMessageSources source; 			// Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
 
-	uint8_t data[MESSAGE_BUFFER_SIZE];	// Буфер для принимаемого сообщения
+	uint8_t *data;						// Указатель на буфер принимаемого сообщения
 	uint16_t length;    				// Длина принимаемого сообщения
 
 	uint8_t inUse;						// Флаг занятости буфера. После того, как обработали данные, записываем 0

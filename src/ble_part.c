@@ -17,6 +17,7 @@ static struct k_work restart_adv_work;
 
 
 static tUniversalMessageRX poolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
+static uint8_t dataPoolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];   // Данные буферов приёма
 static tUniversalMessageRX *currentPoolBuffersRX_BLE[CONFIG_BT_MAX_CONN] = { NULL };    // Текущий буфер для каждого соединения 
 
 extern struct k_msgq parser_queue;  // Очередь парсера
@@ -358,6 +359,11 @@ void ble_thread(void)
 	tUniversalMessageTX pkt;
     int conn_index = 0;
 
+    for (uint16_t i = 0; i < COUNT_BLE_RX_POOL_BUFFERS; i++) 
+    {
+        poolBuffersRX_BLE[i].data = dataPoolBuffersRX_BLE[i];
+    }
+
     while (1) 
     {
 		k_msgq_get(&ble_queue_tx, &pkt, K_FOREVER);
@@ -656,13 +662,14 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                     if (crcValueBuf != crcCalculatedBuf) 
                         printk(" --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
 
-
                     currentPoolBuffersRX_BLE[conn_index]->source = MESSAGE_SOURCE_BLE_CONNS + conn_index;
+                    currentPoolBuffersRX_BLE[conn_index]->length++;
                     err = k_msgq_put(&parser_queue, &currentPoolBuffersRX_BLE[conn_index], K_NO_WAIT);
                     if (err != 0)
                        printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
 
                     buildPacket = 0; // Конец
+                    return len;
                 }                
             }
         }
