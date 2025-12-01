@@ -43,5 +43,5 @@
 
 
 
-void settings_init_save(); // Сохраняем настройки, если нужно
-void settings_init_load();
+int settings_init_save(); // Сохраняем настройки, если нужно
+int settings_init_load();

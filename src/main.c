@@ -48,7 +48,7 @@ void main_thread(void)
 	usb_begin(USB_RX_TIMEOUT_VALUE);
 	
 	
-	
+
 	uint8_t battery_level = 0;
 	uint8_t battery_level_status = 0;
 
@@ -96,8 +96,10 @@ K_THREAD_DEFINE(main_thread_id, THREAD_STACK_SIZE_MAIN, main_thread, NULL, NULL,
 
 
 
-void settings_init_save()
+int settings_init_save()
 {
+	int err = 0;
+
 	struct bt_uuid_128 uuid_bufs[3] = 
 	{
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E0, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
@@ -108,23 +110,89 @@ void settings_init_save()
 
 	
 	// UUIDs
-	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &uuid_bufs[0], sizeof(struct bt_uuid_128));
-	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &uuid_bufs[1], sizeof(struct bt_uuid_128));
-	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &uuid_bufs[2], sizeof(struct bt_uuid_128));
+	err = settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &uuid_bufs[0], sizeof(struct bt_uuid_128));
+	if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Service Save Failed!\n");
+		return err; 
+	}
+
+	err = settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &uuid_bufs[1], sizeof(struct bt_uuid_128));
+	if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Characteristic IN Save Failed!\n");
+		return err; 
+	}	
+
+	err = settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &uuid_bufs[2], sizeof(struct bt_uuid_128));
+	if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Characteristic OUT Save Failed!\n");
+		return err; 
+	}
 
 	// Time
-	settings_save_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &usb_rx_timeout_buf, sizeof(uint16_t));
+	err = settings_save_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &usb_rx_timeout_buf, sizeof(uint16_t));
+	if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  USB RX Timeout Save Failed!\n");
+		return err; 
+	}	
+
+	return 0;
 }
 
-void settings_init_load() 
+int settings_init_load() 
 {	
+	int err = 0;
+
 	// UUIDs
-	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128));
-	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128));
-	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128));
+	err = settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128));
+	if (err == 0)
+	{
+		printk(" --- NVS WRN --- :  UUID Transport Service is NULL\n");
+	}	
+	else if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Service Load Failed!\n");
+		return err; 
+	}
+
+	err = settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128));
+	if (err == 0)
+	{
+		printk(" --- NVS WRN --- :  UUID Transport Characteristic IN is NULL\n");
+	}
+	else if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Characteristic IN Load Failed!\n");
+		return err; 
+	}
+
+	err = settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128));
+	if (err == 0)
+	{
+		printk(" --- NVS WRN --- :  UUID Transport Characteristic OUT is NULL\n");
+	}
+	else if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  UUID Transport Characteristic OUT Load Failed!\n");
+		return err; 
+	}	
 
 	// Time
-	settings_load_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &USB_RX_TIMEOUT_VALUE, sizeof(uint16_t));
+	err = settings_load_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &USB_RX_TIMEOUT_VALUE, sizeof(uint16_t));
+	if (err == 0)
+	{
+		printk(" --- NVS WRN --- :  USB RX Timeout is NULL\n");
+	}
+	else if (err < 0)
+	{
+		printk(" --- NVS ERR --- :  USB RX Timeout Load Failed!\n");
+		return err; 
+	}	
+
+	return 0;
 }
 
 		
