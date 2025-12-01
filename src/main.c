@@ -25,49 +25,6 @@ struct bt_uuid_128 UUID_TRANSPORT_CHARACTERISTIC_OUT;
 uint16_t USB_RX_TIMEOUT_VALUE;
 
 
-void getFullSettingsPath(char *buf, const char *root, const char *key) 
-{
-	memcpy(buf, root, sizeof(root)-1);
-	memcpy(&buf[sizeof(root)-1], key, sizeof(key)-1);	
-}
-
-static int settings_bt_load(const char *key, size_t len,
-                            settings_read_cb read_cb, void *cb_arg)
-{
-	// UUIDs
-    if (strcmp( key, NVS_KEY_BT_UUID_TRANSPORT_SERVICE ) == 0) 
-	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
-			printk(" --- BLE UUID ERR --- : Bad Service UUID!\n");
-    }
-
-    if (strcmp( key, NVS_KEY_BT_UUID_TRANSPORT_CHARACTERISTIC_IN ) == 0) 
-	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
-			printk(" --- BLE UUID ERR --- : Bad IN Characteristic UUID!\n");
-    }
-	
-    if (strcmp( key, NVS_KEY_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT ) == 0)
-	{
-        if (read_cb(cb_arg, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128)) != sizeof(struct bt_uuid_128)) 
-			printk(" --- BLE UUID ERR --- : Bad OUT Characteristic UUID!\n");
-				
-    }	
-
-	// Time
-    if (strcmp( key, NVS_KEY_TIMEOUT_USB_RX_TIMEOUT ) == 0) 
-	{
-        if (read_cb(cb_arg, &USB_RX_TIMEOUT_VALUE, sizeof(uint16_t)) != sizeof(uint16_t)) 
-			printk(" --- USB ERR --- : Bad USB RX Timeout Value!\n");
-				
-    }		
-
-    return 0;
-}
-
-SETTINGS_STATIC_HANDLER_DEFINE(settings_bt_handler, "bt",
-                               NULL, settings_bt_load, NULL, NULL);
-
 
 
 // *******************************************************************
@@ -83,36 +40,13 @@ void main_thread(void)
 
 	settings_subsys_init();
 
-	// Сохраняем настройки, если нужно
-	char full_path[SETTINGS_MAX_VAL_LEN] = { 0 };
-
-	struct bt_uuid_128 uuid_bufs[3] = 
-	{
-		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E0, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
-		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
-		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
-	};
-	uint16_t usb_rx_timeout_buf = 150;
-
-	
-	getFullSettingsPath(full_path, NVS_ROOT_KEY_BT, NVS_KEY_BT_UUID_TRANSPORT_SERVICE);
-	settings_save_one(full_path, &uuid_bufs[0], sizeof(struct bt_uuid_128));
-
-	getFullSettingsPath(full_path, NVS_ROOT_KEY_BT, NVS_KEY_BT_UUID_TRANSPORT_CHARACTERISTIC_IN);
-	settings_save_one(full_path, &uuid_bufs[1], sizeof(struct bt_uuid_128));
-
-	getFullSettingsPath(full_path, NVS_ROOT_KEY_BT, NVS_KEY_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT);
-	settings_save_one(full_path, &uuid_bufs[2], sizeof(struct bt_uuid_128));
-
-	getFullSettingsPath(full_path, NVS_ROOT_KEY_TIME, NVS_KEY_TIMEOUT_USB_RX_TIMEOUT);
-	settings_save_one(full_path, &usb_rx_timeout_buf, sizeof(uint16_t));
-
-	settings_load();
+	settings_init_save();
+	settings_init_load();
 
 
 	ble_begin(&UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
 	usb_begin(USB_RX_TIMEOUT_VALUE);
-
+	
 	
 	
 	uint8_t battery_level = 0;
@@ -159,6 +93,39 @@ void main_thread(void)
 
 K_THREAD_DEFINE(main_thread_id, THREAD_STACK_SIZE_MAIN, main_thread, NULL, NULL, NULL,
 		THREAD_PRIORITY_MAIN, 0, 0);
+
+
+
+void settings_init_save()
+{
+	struct bt_uuid_128 uuid_bufs[3] = 
+	{
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E0, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
+	};
+	uint16_t usb_rx_timeout_buf = 150;
+
+	
+	// UUIDs
+	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &uuid_bufs[0], sizeof(struct bt_uuid_128));
+	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &uuid_bufs[1], sizeof(struct bt_uuid_128));
+	settings_save_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &uuid_bufs[2], sizeof(struct bt_uuid_128));
+
+	// Time
+	settings_save_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &usb_rx_timeout_buf, sizeof(uint16_t));
+}
+
+void settings_init_load() 
+{	
+	// UUIDs
+	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_SERVICE, sizeof(struct bt_uuid_128));
+	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_IN, sizeof(struct bt_uuid_128));
+	settings_load_one(NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT, &UUID_TRANSPORT_CHARACTERISTIC_OUT, sizeof(struct bt_uuid_128));
+
+	// Time
+	settings_load_one(NVS_PATH_TIME_USB_RX_TIMEOUT, &USB_RX_TIMEOUT_VALUE, sizeof(uint16_t));
+}
 
 		
 

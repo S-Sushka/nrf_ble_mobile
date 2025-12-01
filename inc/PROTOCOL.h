@@ -80,5 +80,5 @@ typedef struct
 
 
 
-uint16_t calculateCRC(uint8_t *data, uint16_t length);  // End Mark учитывается, Преамбула НЕ учитывается
+uint16_t calculateCRC(uint8_t *data, uint16_t length);
 int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
