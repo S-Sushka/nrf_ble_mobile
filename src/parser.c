@@ -52,9 +52,9 @@ void parser_thread()
 
             crcCalculatedBuf = calculateCRC(pkt_echo.data, payloadLenBuf+PROTOCOL_INDEX_PL_START+1);
 
-            pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf & 0x00FF;
-            crcCalculatedBuf >>= 8;
             pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+2] = crcCalculatedBuf;
+            crcCalculatedBuf >>= 8;
+            pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf;
             
 
             _DEBUG_printBuffer("TX", pkt_echo.data, pkt_echo.length);

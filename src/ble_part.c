@@ -20,6 +20,8 @@ static tUniversalMessageRX poolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS];        
 static uint8_t dataPoolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];   // Данные буферов приёма
 static tUniversalMessageRX *currentPoolBuffersRX_BLE[CONFIG_BT_MAX_CONN] = { NULL };    // Текущий буфер для каждого соединения 
 
+static tParcingProcessData context_BLE[CONFIG_BT_MAX_CONN]; // Контекст для выполнения парсинга
+
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
@@ -581,6 +583,8 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags)
 {
+    int err = 0;
+    
     int conn_index = BT_GET_INDEX_BY_CONN(conn);    
     if (conn_index < 0) 
     {
@@ -593,89 +597,55 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
 		printk(" --- BLE RX ERR --- : Bad Data!\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
-    
-
-    uint8_t *ptrData = NULL;
-    uint8_t byteBuf = 0;
-
-    uint16_t lenPayloadBuf = 0;
-    uint16_t crcValueBuf = 0;
-
-    uint8_t buildPacket = 0;
-
-    int err = 0; 
 
 
-    ptrData = (uint8_t*)buf;
-    for (int i = 0; i < len; i++) 
+    if (getUnusedBuffer(&currentPoolBuffersRX_BLE[conn_index], poolBuffersRX_BLE, COUNT_BLE_RX_POOL_BUFFERS) == 0)
     {
-        byteBuf = ptrData[i];
+        currentPoolBuffersRX_BLE[conn_index]->source = MESSAGE_SOURCE_BLE_CONNS + conn_index;
+        currentPoolBuffersRX_BLE[conn_index]->length = 0;
+        currentPoolBuffersRX_BLE[conn_index]->inUse = 1;
 
-        if (!buildPacket) 
-        {
-            if (byteBuf == PROTOCOL_PREAMBLE)
-            {
-                if (getUnusedBuffer(&currentPoolBuffersRX_BLE[conn_index], poolBuffersRX_BLE, COUNT_BLE_RX_POOL_BUFFERS) == 0)
-                {
-                    buildPacket = 1;
-                    currentPoolBuffersRX_BLE[conn_index]->length = 0;
-                    currentPoolBuffersRX_BLE[conn_index]->inUse = 1;
-                }
-                else 
-                    printk(" --- BLE ERR --- : There are no free buffers!\n");
-            }
-            else
-                continue;
-        }
-
-        currentPoolBuffersRX_BLE[conn_index]->data[ currentPoolBuffersRX_BLE[conn_index]->length ] = byteBuf;
-
-        if (currentPoolBuffersRX_BLE[conn_index]->length == PROTOCOL_INDEX_PL_LEN) // LEN MSB
-        {
-            lenPayloadBuf = byteBuf;
-            lenPayloadBuf <<= 8;
-        }
-        else if (currentPoolBuffersRX_BLE[conn_index]->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
-        {
-            lenPayloadBuf |= byteBuf;
-        }
-        else if (currentPoolBuffersRX_BLE[conn_index]->length > PROTOCOL_INDEX_PL_LEN + 1)
-        {
-            if (currentPoolBuffersRX_BLE[conn_index]->length >= lenPayloadBuf + PROTOCOL_INDEX_PL_START) 
-            {
-                if (currentPoolBuffersRX_BLE[conn_index]->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START) // End Mark
-                {
-                    if (byteBuf != PROTOCOL_END_MARK) 
-                        printk(" --- BLE ERR --- :  Bad END MARK byte for recieved Packet!\n");
-                }
-                else if (currentPoolBuffersRX_BLE[conn_index]->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+1) // CRC MSB 
-                {
-                    crcValueBuf = byteBuf;
-                    crcValueBuf <<= 8;
-                }
-                else if (currentPoolBuffersRX_BLE[conn_index]->length == lenPayloadBuf+PROTOCOL_INDEX_PL_START+2) // CRC LSB 
-                {
-                    crcValueBuf |= byteBuf;
-
-                    uint16_t crcCalculatedBuf = calculateCRC(currentPoolBuffersRX_BLE[conn_index]->data, lenPayloadBuf+PROTOCOL_INDEX_PL_START+1);
-
-                    if (crcValueBuf != crcCalculatedBuf) 
-                        printk(" --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
-
-                    currentPoolBuffersRX_BLE[conn_index]->source = MESSAGE_SOURCE_BLE_CONNS + conn_index;
-                    currentPoolBuffersRX_BLE[conn_index]->length++;
-                    err = k_msgq_put(&parser_queue, &currentPoolBuffersRX_BLE[conn_index], K_NO_WAIT);
-                    if (err != 0)
-                       printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
-
-                    buildPacket = 0; // Конец
-                    return len;
-                }                
-            }
-        }
-
-        currentPoolBuffersRX_BLE[conn_index]->length++;
+        context_BLE[conn_index].messageBuf = currentPoolBuffersRX_BLE[conn_index];
+        context_BLE[conn_index].buildPacket = 1;        
     }
+    else
+    {
+        printk(" --- BLE ERR --- : There are no free buffers!\n");
+        return len;
+    }
+
+    for (uint16_t i = 0; i < len; i++) 
+    {
+        err = parseNextByte( ((uint8_t*)buf)[i], &context_BLE[conn_index] ); 
+        if (err < 0) 
+        {
+            switch (err) 
+            {
+            case -EMSGSIZE:
+                printk(" --- BLE ERR --- :  Recieve Packet too Long!\n");
+            break;
+            case -EPROTO:
+                printk(" --- BLE ERR --- :  Bad END MARK byte for recieved Packet!\n");
+            break;
+            case -EBADMSG:
+                printk(" --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
+            break;
+            default:
+                printk(" --- BLE ERR --- :  Parse Packet Error: %d\n", err);
+            break;                        
+            }
+            return len;
+        }
+        else if (err > 0) 
+        {
+            err = k_msgq_put(&parser_queue, &currentPoolBuffersRX_BLE[conn_index], K_NO_WAIT);
+            if (err != 0)
+            {
+                printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
+            }
+        }
+    }
+
 
     return len;
 }

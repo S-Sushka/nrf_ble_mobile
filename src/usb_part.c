@@ -26,6 +26,8 @@ static tUniversalMessageRX poolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS];        
 static uint8_t dataPoolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];	// Данные буферов приёма
 static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;                				// Текущий буфер
 
+static tParcingProcessData context_USB; // Контекст для выполнения парсинга
+
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
@@ -64,15 +66,12 @@ int usb_begin(uint16_t rx_timeout_ms)
 	return 0;
 }
 
-static uint8_t USB_buildPacket = 0;
+
 static void usb_rx_handler(const struct device *dev, void *user_data)
 {
 	ARG_UNUSED(user_data);
 
     static uint8_t byteBuf;
-
-    static uint16_t lenPayloadBuf;
-    static uint16_t crcValueBuf;
 
     int err = 0; 
 
@@ -80,88 +79,77 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
     // Проверяем, есть ли событие приёма
     if (uart_irq_update(dev) && uart_irq_rx_ready(dev)) 
 	{
+
         while (uart_fifo_read(dev, &byteBuf, 1)) 
 		{
-			if (!USB_buildPacket)
+			if (!context_USB.buildPacket) 
 			{
 				if (byteBuf == PROTOCOL_PREAMBLE)
 				{
 					if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_BLE_RX_POOL_BUFFERS) == 0)
 					{
-						USB_buildPacket = 1;
+						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
 						currentPoolBufferRX_USB->length = 0;
 						currentPoolBufferRX_USB->inUse = 1;
+
+						context_USB.messageBuf = currentPoolBufferRX_USB;
+						context_USB.buildPacket = 1;    
 					}
 					else
+					{
 						printk(" --- USB ERR --- : There are no free buffers!\n");
+						break;
+					}
 				}
 				else
-					continue;
+					continue;				
 			}
 
-			currentPoolBufferRX_USB->data[currentPoolBufferRX_USB->length] = byteBuf;
-
-			if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN) // LEN MSB
+			err = parseNextByte(byteBuf, &context_USB);
+			if (err < 0)
 			{
-				lenPayloadBuf = byteBuf;
-				lenPayloadBuf <<= 8;
-			}
-			else if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
-			{
-				lenPayloadBuf |= byteBuf;
-			}
-			else if (currentPoolBufferRX_USB->length > PROTOCOL_INDEX_PL_LEN + 1)
-			{
-				if (currentPoolBufferRX_USB->length >= lenPayloadBuf + PROTOCOL_INDEX_PL_START)
+				switch (err)
 				{
-					if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START) // End Mark
-					{
-						if (byteBuf != PROTOCOL_END_MARK)
-							printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
-					}
-					else if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START + 1) // CRC MSB
-					{
-						crcValueBuf = byteBuf;
-						crcValueBuf <<= 8;
-					}
-					else if (currentPoolBufferRX_USB->length == lenPayloadBuf + PROTOCOL_INDEX_PL_START + 2) // CRC LSB
-					{
-						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
-
-						crcValueBuf |= byteBuf;
-
-						uint16_t crcCalculatedBuf = calculateCRC(currentPoolBufferRX_USB->data, lenPayloadBuf + PROTOCOL_INDEX_PL_START + 1);
-
-						if (crcValueBuf != crcCalculatedBuf)
-							printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
-
-						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
-						currentPoolBufferRX_USB->length++;
-						err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
-						if (err != 0)
-							printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
-
-						USB_buildPacket = 0; // Конец
-						return;
-					}
+				case -EMSGSIZE:
+					printk(" --- USB ERR --- :  Recieve Packet too Long!\n");
+					break;
+				case -EPROTO:
+					printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
+					break;
+				case -EBADMSG:
+					printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
+					break;
+				default:
+					printk(" --- USB ERR --- :  Parse Packet Error: %d\n", err);
+					break;
+				}
+				break;
+			}
+			else if (err > 0)
+			{
+				err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
+				if (err != 0)
+				{
+					printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
+					break;
 				}
 			}
-			currentPoolBufferRX_USB->length++;
-		}
 
-		k_work_schedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем ожидание таймаута
-    }	
+			k_work_schedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем ожидание таймаута
+   		}
+
+		k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+	}	
 }
 
 static void usb_timeout_handler(struct k_work *work) 
 {
-	USB_buildPacket = 0;
-
 	if (currentPoolBufferRX_USB) 
 	{
 		currentPoolBufferRX_USB->length = 0;
 		currentPoolBufferRX_USB->inUse = 0;
 	}
+	context_USB.buildPacket = 0; 
 
 	// printk(" --- USB DBG --- :  USB Packet RX Timeout\n");
 }

@@ -10,12 +10,14 @@
 #pragma once
 
 #include <stdint.h>
+#include <zephyr/kernel.h>
 
+
+#define MAX_PL_PACKET_LENGTH		4096
 
 #define MESSAGE_BUFFER_SIZE			512 	// Размер для буферов обмена
 #define COUNT_BLE_RX_POOL_BUFFERS	4
 #define COUNT_USB_RX_POOL_BUFFERS	4
-
 
 
 typedef enum 
@@ -82,3 +84,22 @@ typedef struct
 
 uint16_t calculateCRC(uint8_t *data, uint16_t length);
 int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
+
+
+typedef struct 
+{
+	tUniversalMessageRX *messageBuf;
+
+    uint16_t lenPayloadBuf;
+    uint16_t crcValueBuf;
+
+    uint8_t buildPacket;
+} tParcingProcessData;
+
+/*
+	Универсальная функция для парсинга приходящих пакетов. 
+	Принимает новый	пришедший байт и контекст для каждого конкретного пакета 
+	Возвращает <0 - если ошибка; 0 - если байт запарсен успешно; >0 - длина, если пакет запарсен успешно
+*/
+
+int parseNextByte(uint8_t newByte, tParcingProcessData *context);
