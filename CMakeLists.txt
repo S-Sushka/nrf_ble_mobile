@@ -6,6 +6,7 @@ project(nrf_ble_mobile)
 target_include_directories(app PRIVATE inc)
 
 target_sources(app PRIVATE
+    ${ZEPHYR_BASE}/../modules/debug/segger/SEGGER/SEGGER_RTT_printf.c
     src/PROTOCOL.c
     src/parser.c
     src/ble_part.c

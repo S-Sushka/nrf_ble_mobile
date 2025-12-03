@@ -15,7 +15,7 @@
 
 #define MAX_PL_PACKET_LENGTH		4096
 
-#define MESSAGE_BUFFER_SIZE			512 	// Размер для буферов обмена
+#define MESSAGE_BUFFER_SIZE			5000 	// Размер для буферов обмена
 #define COUNT_BLE_RX_POOL_BUFFERS	4
 #define COUNT_USB_RX_POOL_BUFFERS	4
 

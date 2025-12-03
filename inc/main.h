@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <SEGGER_RTT.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 

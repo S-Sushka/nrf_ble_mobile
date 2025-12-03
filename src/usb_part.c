@@ -39,14 +39,14 @@ int usb_begin(uint16_t rx_timeout_ms)
 	// Инициализация USB 
     if (!device_is_ready(uart_cdc_dev)) 
 	{
-        printk(" --- USB CDC ERR --- :\tCDC ACM device not ready\n");
+        SEGGER_RTT_printf(0, " --- USB CDC ERR --- :\tCDC ACM device not ready\n");
         return -ENODEV;
     }	
 
 	err = usb_enable(NULL);
 	if (err != 0) 
 	{
-		printk(" --- USB CDC ERR --- :\tFailed to enable USB\n");
+		SEGGER_RTT_printf(0, " --- USB CDC ERR --- :\tFailed to enable USB\n");
 		return err;
 	}
 
@@ -56,13 +56,13 @@ int usb_begin(uint16_t rx_timeout_ms)
 	err = uart_irq_callback_set(uart_cdc_dev, usb_rx_handler);
 	if (err != 0) 
 	{
-		printk(" --- USB CDC ERR --- :\tRX Callback set Failed\n");
+		SEGGER_RTT_printf(0, " --- USB CDC ERR --- :\tRX Callback set Failed\n");
 		return err;
 	}
 	uart_irq_rx_enable(uart_cdc_dev);
 
 
-	printk(" --- USB CDC --- :  Successful Initialized!\n");
+	SEGGER_RTT_printf(0, " --- USB CDC --- :  Successful Initialized!\n");
 	return 0;
 }
 
@@ -97,7 +97,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					}
 					else
 					{
-						printk(" --- USB ERR --- : There are no free buffers!\n");
+						SEGGER_RTT_printf(0, " --- USB ERR --- : There are no free buffers!\n");
 						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 						return;
 					}
@@ -112,16 +112,16 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				switch (err)
 				{
 				case -EMSGSIZE:
-					printk(" --- USB ERR --- :  Recieve Packet too Long!\n");
+					SEGGER_RTT_printf(0, " --- USB ERR --- :  Recieve Packet too Long!\n");
 					break;
 				case -EPROTO:
-					printk(" --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
+					SEGGER_RTT_printf(0, " --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
 					break;
 				case -EBADMSG:
-					printk(" --- USB ERR --- :  Bad CRC for recieved Packet!\n");
+					SEGGER_RTT_printf(0, " --- USB ERR --- :  Bad CRC for recieved Packet!\n");
 					break;
 				default:
-					printk(" --- USB ERR --- :  Parse Packet Error: %d\n", err);
+					SEGGER_RTT_printf(0, " --- USB ERR --- :  Parse Packet Error: %d\n", err);
 					break;
 				}
 
@@ -133,7 +133,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
 				if (err != 0)
 				{
-					printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);
+					SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);
 					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 					return;
 				}
@@ -155,7 +155,7 @@ static void usb_timeout_handler(struct k_work *work)
 	}
 	context_USB.buildPacket = 0; 
 
-	// printk(" --- USB DBG --- :  USB Packet RX Timeout\n");
+	// SEGGER_RTT_printf(0, " --- USB DBG --- :  USB Packet RX Timeout\n");
 }
 
 

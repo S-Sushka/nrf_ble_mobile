@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <SEGGER_RTT.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>

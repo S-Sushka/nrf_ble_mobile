@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <SEGGER_RTT.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/device.h>

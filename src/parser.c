@@ -62,13 +62,13 @@ void parser_thread()
             {
                 err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
                 if (err != 0)
-                    printk(" --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+                    SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
             }
             else
             {
                 err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
                 if (err != 0)
-                    printk(" --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
+                    SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
             }
         }
 
@@ -80,13 +80,13 @@ K_THREAD_DEFINE(parser_thread_id, 2048, parser_thread, NULL, NULL, NULL, 7, 0, 0
 
 void _DEBUG_printBuffer(const char *prefix, uint8_t *data, uint16_t length) 
 {
-    printk(" --- %s PACKET --- : ", prefix);
+    SEGGER_RTT_printf(0, " --- %s PACKET --- : ", prefix);
     for (int i = 0; i < length; i++) 
     {
         if (data[i] >= 0x10)
-            printk("%x ", data[i]);
+            SEGGER_RTT_printf(0, "%x ", data[i]);
         else
-            printk("0%x ", data[i]);
+            SEGGER_RTT_printf(0, "0%x ", data[i]);
     }
-    printk("\n");
+    SEGGER_RTT_printf(0, "\n");
 }

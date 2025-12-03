@@ -151,7 +151,7 @@ static struct bt_data adv_data[4];
 
 static void BT_MTU_UPDATED(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
-    printk(" --- BLE --- :  Updated MTU: TX %d RX %d bytes\n", tx, rx);
+    SEGGER_RTT_printf(0, " --- BLE --- :  Updated MTU: TX %d RX %d bytes\n", tx, rx);
 }
 
 // Подключение/Отключение
@@ -171,14 +171,14 @@ static void BT_CONNECTED(struct bt_conn *conn, uint8_t err)
 
                 k_work_submit(&restart_adv_work); // Перезапускаем Advertisement
 
-                printk(" --- BLE --- :  Connected: %s\n", addr_str);
+                SEGGER_RTT_printf(0, " --- BLE --- :  Connected: %s\n", addr_str);
 
                 return;
             }
         }     
     }
 
-    printk(" --- BLE ERR --- :  Bluetooth connected Failed!\n");
+    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bluetooth connected Failed!\n");
 }
 
 static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
@@ -206,13 +206,13 @@ static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
 
             k_work_submit(&restart_adv_work); // Перезапускаем Advertisement
 
-            printk(" --- BLE --- :  Disconnected: %s\n", addr_str);
+            SEGGER_RTT_printf(0, " --- BLE --- :  Disconnected: %s\n", addr_str);
 
             return;
         }
     }
 
-    printk(" --- BLE ERR --- :  Bluetooth device delete Failed!\n");
+    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bluetooth device delete Failed!\n");
 }
 
 
@@ -239,7 +239,7 @@ static void restart_adv(struct k_work *work)
 
     err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
     if (err < 0)
-        printk(" --- BLE ERR --- :  Failed to restart advertising: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Failed to restart advertising: %d\n", err);
 }
 
 
@@ -297,7 +297,7 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
     err = bt_enable(NULL);
     if (err < 0) 
     {
-        printk(" --- BLE ERR --- :  Bluetooth enable Failed: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bluetooth enable Failed: %d\n", err);
         return err;
     }
 
@@ -305,16 +305,16 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
     err = ble_prepare_transport_service(transport_service_uuid, transport_characteristic_in_uuid, transport_characteristic_out_uuid);
     if (err < 0)
     {
-        printk(" --- BLE ERR --- :  Register Transport Service Failed: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Register Transport Service Failed: %d\n", err);
         return err;
     }
-    printk(" --- BLE --- :  Transport Service successful added\n");
+    SEGGER_RTT_printf(0, " --- BLE --- :  Transport Service successful added\n");
 
         
 	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_CONN, NULL, &adv);
     if (err < 0) 
     {
-        printk(" --- BLE ERR --- :  Advertisement create Failed: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Advertisement create Failed: %d\n", err);
         return err;
     }
 
@@ -322,7 +322,7 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
 	err = bt_le_ext_adv_set_data(adv, adv_data, ARRAY_SIZE(adv_data), NULL, 0);
     if (err < 0) 
     {
-        printk(" --- BLE ERR --- :  Set data to advertising Failed: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Set data to advertising Failed: %d\n", err);
         return err;
     }
 
@@ -332,11 +332,11 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
 	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
     if (err < 0) 
     {
-        printk(" --- BLE ERR --- :  Begin advetisement start Failed: %d\n", err);
+        SEGGER_RTT_printf(0, " --- BLE ERR --- :  Begin advetisement start Failed: %d\n", err);
         return err;
     }
 
-    printk(" --- BLE --- :  Successful Initialized!\n");
+    SEGGER_RTT_printf(0, " --- BLE --- :  Successful Initialized!\n");
 
     return 0;    
 }
@@ -367,7 +367,7 @@ void ble_thread(void)
         // Notify
         if ( !(conn_index >= 0 && conn_index < CONFIG_BT_MAX_CONN) ) 
         {
-            printk(" --- BLE TX ERR --- : Incorrect Source!\n");
+            SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Incorrect Source!\n");
             continue;
         }
 
@@ -376,7 +376,7 @@ void ble_thread(void)
 
         if (!pkt.data || pkt.length >= MESSAGE_BUFFER_SIZE) 
         {
-            printk(" --- BLE TX ERR --- : Bad Data!\n");
+            SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Bad Data!\n");
             continue;
         }        
 
@@ -385,7 +385,7 @@ void ble_thread(void)
         {
             int err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt.data, pkt.length);
             if (err < 0)
-                printk(" --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
         }
         bt_conn_unref(conns[conn_index]);
     }   	
@@ -426,7 +426,7 @@ void ble_bas_set_battery_level(uint8_t value)
         {
             err = bt_gatt_notify(conns[i], &bas_service.attrs[2], &BT_BAS_BatteryLevel, sizeof(BT_BAS_BatteryLevel));
             if (err < 0)
-                printk(" --- BLE ERR --- :  Sending Notify for \"Battery Level\" Failed: %d\n", err);
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Battery Level\" Failed: %d\n", err);
         }
         bt_conn_unref(conns[i]);
     }
@@ -447,7 +447,7 @@ void ble_bas_set_battery_level_status(uint8_t value)
         {
             err = bt_gatt_notify(conns[i], &bas_service.attrs[4], &BT_BAS_BatteryLevelStatus, sizeof(BT_BAS_BatteryLevelStatus));
             if (err < 0)
-                printk(" --- BLE ERR --- :  Sending Notify for \"Battery Level Status\" Failed: %d\n", err);
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Battery Level Status\" Failed: %d\n", err);
         }
         bt_conn_unref(conns[i]);
     }
@@ -496,7 +496,7 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_BATTERY_LEVEL(struct bt_conn *conn,
                 conn_addr = (bt_addr_le_t*)bt_conn_get_dst(conns[i]);
                 bt_addr_le_to_str(conn_addr, conn_addr_buf, sizeof(conn_addr_buf));
 
-                printk(" --- BLE Notify - BAS Battery Level --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
+                SEGGER_RTT_printf(0, " --- BLE Notify - BAS Battery Level --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
 
                 BT_BAS_BATTERY_LEVEL_NOTIFY_States[i] = value;
                 return bt_gatt_attr_write_ccc(conn, attr, buf, len, offset, flags);
@@ -535,7 +535,7 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_BATTERY_LEVEL_STATUS(struct bt_conn *conn,
                 conn_addr = (bt_addr_le_t*)bt_conn_get_dst(conns[i]);
                 bt_addr_le_to_str(conn_addr, conn_addr_buf, sizeof(conn_addr_buf));
 
-                printk(" --- BLE Notify - BAS Battery Level Status --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
+                SEGGER_RTT_printf(0, " --- BLE Notify - BAS Battery Level Status --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
 
                 BT_BAS_BATTERY_LEVEL_STATUS_NOTIFY_States[i] = value;
                 return bt_gatt_attr_write_ccc(conn, attr, buf, len, offset, flags);
@@ -557,13 +557,13 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
     int conn_index = BT_GET_INDEX_BY_CONN(conn);    
     if (conn_index < 0) 
     {
-        printk(" --- BLE RX ERR --- : Read Data Failed - Incorrect Conn!\n");
+        SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Read Data Failed - Incorrect Conn!\n");
         return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
     }
 
     if (len >= MESSAGE_BUFFER_SIZE)
 	{
-		printk(" --- BLE RX ERR --- : Bad Data!\n");
+		SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Bad Data!\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
 
@@ -579,7 +579,7 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
     }
     else
     {
-        printk(" --- BLE ERR --- : There are no free buffers!\n");
+        SEGGER_RTT_printf(0, " --- BLE ERR --- : There are no free buffers!\n");
         return len;
     }
 
@@ -591,16 +591,16 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
             switch (err) 
             {
             case -EMSGSIZE:
-                printk(" --- BLE ERR --- :  Recieve Packet too Long!\n");
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Recieve Packet too Long!\n");
             break;
             case -EPROTO:
-                printk(" --- BLE ERR --- :  Bad END MARK byte for recieved Packet!\n");
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bad END MARK byte for recieved Packet!\n");
             break;
             case -EBADMSG:
-                printk(" --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
             break;
             default:
-                printk(" --- BLE ERR --- :  Parse Packet Error: %d\n", err);
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Parse Packet Error: %d\n", err);
             break;                        
             }
             return len;
@@ -610,7 +610,7 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
             err = k_msgq_put(&parser_queue, &currentPoolBuffersRX_BLE[conn_index], K_NO_WAIT);
             if (err != 0)
             {
-                printk(" --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
+                SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
             }
         }
     }
@@ -646,7 +646,7 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
                 conn_addr = (bt_addr_le_t*)bt_conn_get_dst(conns[i]);
                 bt_addr_le_to_str(conn_addr, conn_addr_buf, sizeof(conn_addr_buf));
 
-                printk(" --- BLE Notify - Transport OUT --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
+                SEGGER_RTT_printf(0, " --- BLE Notify - Transport OUT --- : %s - %s\n", conn_addr_buf, (value == 0) ? "FALSE" : "TRUE");
 
                 BT_TRANSPORT_NOTIFY_States[i] = value;
                 return bt_gatt_attr_write_ccc(conn, attr, buf, len, offset, flags);
