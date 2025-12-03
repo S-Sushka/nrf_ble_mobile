@@ -98,10 +98,6 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags);
 
-static ssize_t BT_TRANSPORT_read_state(struct bt_conn *conn,
-                                       const struct bt_gatt_attr *attr, void *buf,
-                                       uint16_t len, uint16_t offset);
-
 ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 			       const struct bt_gatt_attr *attr, const void *buf,
 			       uint16_t len, uint16_t offset, uint8_t flags);
@@ -110,9 +106,6 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 static struct bt_gatt_service transport_service;
 
 static uint8_t BT_TRANSPORT_In;
-static tUniversalMessageTX *BT_TRANSPORT_Out = NULL;
-
-static uint8_t BT_TRANSPORT_Out_;
 
 static struct bt_gatt_ccc_managed_user_data TRANSPORT_CCC = BT_GATT_CCC_MANAGED_USER_DATA_INIT(NULL, NULL, NULL);
 static uint8_t BT_TRANSPORT_NOTIFY_States[CONFIG_BT_MAX_CONN] = { 0 };
@@ -127,9 +120,9 @@ struct bt_gatt_attr TRANSPORT_ATTRIBUTES[] =
                         NULL, BT_TRANSPORT_write_state, &BT_TRANSPORT_In),
 
     BT_GATT_CHARACTERISTIC(NULL,
-                        BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
+                        BT_GATT_CHRC_NOTIFY,
                         BT_GATT_PERM_READ,
-                        BT_TRANSPORT_read_state, NULL, &BT_TRANSPORT_Out_),                        
+                        NULL, NULL, NULL),
 	BT_GATT_ATTRIBUTE(BT_UUID_GATT_CCC, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, \
 	 		            bt_gatt_attr_read_ccc, BT_NOTIFICATIONS_WRITE_CB_TRANSPORT, &TRANSPORT_CCC)
 };
@@ -395,9 +388,6 @@ void ble_thread(void)
                 printk(" --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
         }
         bt_conn_unref(conns[conn_index]);
-
-        // Асинхронное Чтение
-        BT_TRANSPORT_Out = &pkt;
     }   	
 }
 
@@ -558,27 +548,6 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_BATTERY_LEVEL_STATUS(struct bt_conn *conn,
 
 
 // Сервис - TRANSPORT
-static ssize_t BT_TRANSPORT_read_state(struct bt_conn *conn,
-                                       const struct bt_gatt_attr *attr, void *buf,
-                                       uint16_t len, uint16_t offset)
-{
-    int conn_index = BT_GET_INDEX_BY_CONN(conn);    
-    if (conn_index < 0 || BT_TRANSPORT_Out->source-MESSAGE_SOURCE_BLE_CONNS != conn_index) 
-    {
-        printk(" --- BLE TX ERR --- : Incorrect Conn!\n");
-        return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
-    }
-
-    if (!BT_TRANSPORT_Out)
-    {
-        printk(" --- BLE TX ERR --- : Bad Data!\n");
-        return BT_GATT_ERR(BT_ATT_ERR_ATTRIBUTE_NOT_FOUND);
-    }
-        
-    return bt_gatt_attr_read(conn, attr, buf, len, offset,
-                             BT_TRANSPORT_Out->data, BT_TRANSPORT_Out->length);
-}
-
 static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags)
