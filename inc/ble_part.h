@@ -22,7 +22,7 @@
 
 
 
-#define THREAD_STACK_SIZE_BLE   4096
+#define THREAD_STACK_SIZE_BLE   8192
 #define THREAD_PRIORITY_BLE     7
 
 

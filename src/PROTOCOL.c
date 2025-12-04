@@ -16,7 +16,9 @@ K_HEAP_DEFINE(UniversalHeapRX, UNIVERSAL_RX_HEAP_SIZE);
 int heapFreeWithCheck(struct k_heap *heap, void *data) 
 {
 	if (!heap || !data)
+	{
 		return -EINVAL;
+	}
 
 	k_heap_free(heap, data);
 	return 0;
@@ -68,6 +70,9 @@ int parseNextByte(uint8_t newByte, tParcingProcessData *context)
 			context->buildPacket = 1;
 			context->messageBuf->length = 0;
 			context->messageBuf->inUse = 1;
+
+			context->lenPayloadBuf = 0;
+			context->crcValueBuf = 0;
 		}
 		else
 			return 0;
@@ -111,6 +116,7 @@ int parseNextByte(uint8_t newByte, tParcingProcessData *context)
 			else if (context->messageBuf->length == context->lenPayloadBuf + PROTOCOL_INDEX_PL_START + 2) // CRC LSB
 			{
 				context->crcValueBuf |= newByte;
+
 
 				uint16_t crcCalculatedBuf = calculateCRC(context->messageBuf->data, PROTOCOL_INDEX_PL_START + context->lenPayloadBuf + 1);
 				if (context->crcValueBuf != crcCalculatedBuf)

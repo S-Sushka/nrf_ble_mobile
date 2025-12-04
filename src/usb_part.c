@@ -22,7 +22,7 @@ K_WORK_DELAYABLE_DEFINE(usb_timeout_work, usb_timeout_handler);
 
 static uint16_t USB_RX_TIMEOUT;
 
-static tUniversalMessageRX poolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
+static tUniversalMessageRX poolBuffersRX_USB[COUNT_USB_RX_POOL_BUFFERS];                // Буферы приёма
 static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;                				// Текущий буфер
 
 static tParcingProcessData context_USB; // Контекст для выполнения парсинга
@@ -84,7 +84,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 			{
 				if (byteBuf == PROTOCOL_PREAMBLE)
 				{
-					if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_BLE_RX_POOL_BUFFERS) == 0)
+					if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_USB_RX_POOL_BUFFERS) == 0)
 					{
 						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
 						currentPoolBufferRX_USB->length = 0;

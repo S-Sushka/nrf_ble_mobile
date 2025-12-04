@@ -17,6 +17,8 @@
 
 K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessageRX *), 4, 1);
 
+
+static uint8_t data_echo[PROTOCOL_MAX_PACKET_LENGTH];
 void parser_thread()
 {
     int err = 0;
@@ -24,10 +26,8 @@ void parser_thread()
     tUniversalMessageRX *pkt;   
 
     tUniversalMessageTX pkt_echo;
-    uint8_t data_echo[PROTOCOL_MAX_PACKET_LENGTH];
-
-
     pkt_echo.data = data_echo;
+
     while (1) 
     {
         k_msgq_get(&parser_queue, &pkt, K_FOREVER);
@@ -38,10 +38,8 @@ void parser_thread()
             pkt_echo.source = pkt->source;
             pkt_echo.length = pkt->length;
 
-            SEGGER_RTT_printf(0, "PACKET LEN: %d\n", pkt_echo.length);
-
             for (int i = 0; i < pkt->length; i++) 
-                data_echo[i] = pkt->data[i];
+               data_echo[i] = pkt->data[i];
 
             uint16_t crcCalculatedBuf = 0;
             uint16_t payloadLenBuf = 0;
