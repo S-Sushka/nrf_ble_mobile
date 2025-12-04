@@ -17,7 +17,6 @@ static struct k_work restart_adv_work;
 
 
 static tUniversalMessageRX poolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
-static uint8_t dataPoolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];   // Данные буферов приёма
 static tUniversalMessageRX *currentPoolBuffersRX_BLE[CONFIG_BT_MAX_CONN] = { NULL };    // Текущий буфер для каждого соединения 
 
 static tParcingProcessData context_BLE[CONFIG_BT_MAX_CONN]; // Контекст для выполнения парсинга
@@ -105,11 +104,10 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 
 static struct bt_gatt_service transport_service;
 
-static uint8_t BT_TRANSPORT_In;
-
 static struct bt_gatt_ccc_managed_user_data TRANSPORT_CCC = BT_GATT_CCC_MANAGED_USER_DATA_INIT(NULL, NULL, NULL);
 static uint8_t BT_TRANSPORT_NOTIFY_States[CONFIG_BT_MAX_CONN] = { 0 };
 
+static uint8_t BT_TRANSPORT_defaultWriteBuffer[CONFIG_BT_L2CAP_TX_MTU]; // Без буфера для записи характеристики при обычной записи стек рухнет
 struct bt_gatt_attr TRANSPORT_ATTRIBUTES[] = 
 {
     BT_GATT_PRIMARY_SERVICE(NULL),
@@ -117,7 +115,7 @@ struct bt_gatt_attr TRANSPORT_ATTRIBUTES[] =
     BT_GATT_CHARACTERISTIC(NULL,
                         BT_GATT_CHRC_WRITE,
                         BT_GATT_PERM_WRITE,
-                        NULL, BT_TRANSPORT_write_state, &BT_TRANSPORT_In),
+                        NULL, BT_TRANSPORT_write_state, BT_TRANSPORT_defaultWriteBuffer),
 
     BT_GATT_CHARACTERISTIC(NULL,
                         BT_GATT_CHRC_NOTIFY,
@@ -198,6 +196,7 @@ static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
             {
                 currentPoolBuffersRX_BLE[i]->inUse = 0;
                 currentPoolBuffersRX_BLE[i] = NULL;
+                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[i]->data);
             }            
 
             BT_TRANSPORT_NOTIFY_States[i] = 0;
@@ -354,11 +353,6 @@ void ble_thread(void)
 	tUniversalMessageTX pkt;
     int conn_index = 0;
 
-    for (uint16_t i = 0; i < COUNT_BLE_RX_POOL_BUFFERS; i++) 
-    {
-        poolBuffersRX_BLE[i].data = dataPoolBuffersRX_BLE[i];
-    }
-
     while (1) 
     {
 		k_msgq_get(&ble_queue_tx, &pkt, K_FOREVER);
@@ -374,7 +368,7 @@ void ble_thread(void)
         if (!conns[conn_index])
             continue;
 
-        if (!pkt.data || pkt.length >= MESSAGE_BUFFER_SIZE) 
+        if (!pkt.data || pkt.length >= PROTOCOL_MAX_PACKET_LENGTH)
         {
             SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Bad Data!\n");
             continue;
@@ -561,7 +555,7 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
         return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
     }
 
-    if (len >= MESSAGE_BUFFER_SIZE)
+    if (len > PROTOCOL_MAX_PACKET_LENGTH)
 	{
 		SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Bad Data!\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
@@ -576,6 +570,14 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
 
         context_BLE[conn_index].messageBuf = currentPoolBuffersRX_BLE[conn_index];
         context_BLE[conn_index].buildPacket = 1;        
+
+        // Сначала выделим и запарсим 5 байт, чтобы узнать длину пакета
+        currentPoolBuffersRX_BLE[conn_index]->data = k_heap_alloc(&UniversalHeapRX, PROTOCOL_INDEX_PL_START, K_NO_WAIT);
+        if (!currentPoolBuffersRX_BLE[conn_index]->data)
+        {
+            SEGGER_RTT_printf(0, " --- BLE ERR --- : Allocate memory for buffer Failed!\n");
+            return len;
+        }        
     }
     else
     {
@@ -585,6 +587,19 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
 
     for (uint16_t i = 0; i < len; i++) 
     {
+        // Перераспределяем память под весь пакет
+        if (currentPoolBuffersRX_BLE[conn_index]->length == PROTOCOL_INDEX_PL_START)
+        {
+            currentPoolBuffersRX_BLE[conn_index]->data = 
+                k_heap_realloc(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data, PROTOCOL_INDEX_PL_START+context_BLE[conn_index].lenPayloadBuf+PROTOCOL_END_PART_SIZE, K_NO_WAIT);
+            if (!currentPoolBuffersRX_BLE[conn_index]->data)
+            {
+                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
+                SEGGER_RTT_printf(0, " --- BLE ERR --- : Reallocate memory for buffer Failed!\n");
+                return len;
+            }            
+        }
+
         err = parseNextByte( ((uint8_t*)buf)[i], &context_BLE[conn_index] ); 
         if (err < 0) 
         {
@@ -603,6 +618,8 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                 SEGGER_RTT_printf(0, " --- BLE ERR --- :  Parse Packet Error: %d\n", err);
             break;                        
             }
+
+            k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
             return len;
         }
         else if (err > 0) 
@@ -611,6 +628,8 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
             if (err != 0)
             {
                 SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
+                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
+                return len;
             }
         }
     }

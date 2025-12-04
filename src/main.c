@@ -53,7 +53,7 @@ void main_thread(void)
 	uint8_t battery_level_status = 0;
 
 	tUniversalMessageTX notify_packet;
-	uint8_t notify_data[MESSAGE_BUFFER_SIZE];
+	uint8_t notify_data[9];
 	notify_packet.data = notify_data;
 
 	int err = 0;

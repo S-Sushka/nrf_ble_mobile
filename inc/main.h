@@ -17,6 +17,9 @@
 
 
 
+#define THREAD_STACK_SIZE_MAIN  2048
+#define THREAD_PRIORITY_MAIN    0
+
 #define NVS_PATH_FACTORY_DATA_FD_FLAGS                          "factory_data/FD_FLAGS"
 #define NVS_PATH_FACTORY_DATA_FD_TAG_SN                         "factory_data/FD_TAG_SN"
 #define NVS_PATH_FACTORY_DATA_FD_TAG_MODEL                      "factory_data/FD_TAG_MODEL"
@@ -38,10 +41,6 @@
 #define NVS_PATH_BT_UUID_TRANSPORT_CHARACTERISTIC_OUT   "bt/uuid/transport/out"
 
 #define NVS_PATH_TIME_USB_RX_TIMEOUT   "time/usb_rx_timeout"
-
-
-#define THREAD_STACK_SIZE_MAIN  2048
-#define THREAD_PRIORITY_MAIN    0
 
 
 

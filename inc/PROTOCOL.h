@@ -13,11 +13,13 @@
 #include <zephyr/kernel.h>
 
 
-#define MAX_PL_PACKET_LENGTH		4096
 
-#define MESSAGE_BUFFER_SIZE			5000 	// Размер для буферов обмена
+#define MESSAGE_BUFFER_SIZE 512
+
+#define UNIVERSAL_RX_HEAP_SIZE		8192
 #define COUNT_BLE_RX_POOL_BUFFERS	4
 #define COUNT_USB_RX_POOL_BUFFERS	4
+
 
 
 typedef enum 
@@ -25,6 +27,7 @@ typedef enum
 	MESSAGE_SOURCE_USB = 0,
 	MESSAGE_SOURCE_BLE_CONNS,
 } tMessageSources;
+
 
 typedef struct
 {
@@ -34,6 +37,7 @@ typedef struct
 	uint16_t length;		// Длина передаваемого сообщения
 } tUniversalMessageTX;
 
+extern struct k_heap UniversalHeapRX;
 typedef struct
 {
 	tMessageSources source; 			// Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
@@ -55,6 +59,12 @@ typedef struct
 #define PROTOCOL_INDEX_MC		2
 #define PROTOCOL_INDEX_PL_LEN	3
 #define PROTOCOL_INDEX_PL_START	5
+
+#define PROTOCOL_END_PART_SIZE	3 // End Mark + CRC
+
+
+#define PROTOCOL_MAX_PL_PACKET_LENGTH	4096
+#define PROTOCOL_MAX_PACKET_LENGTH		PROTOCOL_INDEX_PL_START + PROTOCOL_MAX_PL_PACKET_LENGTH + PROTOCOL_END_PART_SIZE
 
 
 #define PROTOCOL_MSG_TYPE_PR_COMMAND	0x00

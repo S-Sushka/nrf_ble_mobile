@@ -9,6 +9,9 @@
 
 #include "PROTOCOL.h"
 
+K_HEAP_DEFINE(UniversalHeapRX, UNIVERSAL_RX_HEAP_SIZE);
+
+
 
 uint16_t calculateCRC(uint8_t *data, uint16_t length)
 {
@@ -71,7 +74,7 @@ int parseNextByte(uint8_t newByte, tParcingProcessData *context)
 	else if (context->messageBuf->length == PROTOCOL_INDEX_PL_LEN + 1) // LEN LSB
 	{
 		context->lenPayloadBuf |= newByte;
-		if (context->lenPayloadBuf > MAX_PL_PACKET_LENGTH + PROTOCOL_INDEX_PL_START + 2)
+		if (context->lenPayloadBuf > PROTOCOL_MAX_PACKET_LENGTH)
 		{
 			context->buildPacket = 0;
 			context->messageBuf->inUse = 0;

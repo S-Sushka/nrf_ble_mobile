@@ -23,7 +23,6 @@ K_WORK_DELAYABLE_DEFINE(usb_timeout_work, usb_timeout_handler);
 static uint16_t USB_RX_TIMEOUT;
 
 static tUniversalMessageRX poolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
-static uint8_t dataPoolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];	// Данные буферов приёма
 static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;                				// Текущий буфер
 
 static tParcingProcessData context_USB; // Контекст для выполнения парсинга
@@ -79,7 +78,6 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
     // Проверяем, есть ли событие приёма
     if (uart_irq_update(dev) && uart_irq_rx_ready(dev)) 
 	{
-
         while (uart_fifo_read(dev, &byteBuf, 1)) 
 		{
 			if (!context_USB.buildPacket) 
@@ -94,6 +92,15 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 
 						context_USB.messageBuf = currentPoolBufferRX_USB;
 						context_USB.buildPacket = 1;    
+
+						// Сначала выделим и запарсим 5 байт, чтобы узнать длину пакета
+						currentPoolBufferRX_USB->data = k_heap_alloc(&UniversalHeapRX, PROTOCOL_INDEX_PL_START, K_NO_WAIT);
+						if (!currentPoolBufferRX_USB->data)
+						{
+							SEGGER_RTT_printf(0, " --- USB ERR --- : Allocate memory for buffer Failed!\n");
+							k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+							return;
+						}						
 					}
 					else
 					{
@@ -104,6 +111,21 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				}
 				else
 					continue;				
+			}
+
+			// Перераспределяем память под весь пакет
+			if (currentPoolBufferRX_USB->length == PROTOCOL_INDEX_PL_START)
+			{
+				currentPoolBufferRX_USB->data = 
+					k_heap_realloc(&UniversalHeapRX, currentPoolBufferRX_USB->data, PROTOCOL_INDEX_PL_START+context_USB.lenPayloadBuf+PROTOCOL_END_PART_SIZE, K_NO_WAIT);
+				if (!currentPoolBufferRX_USB->data)
+				{
+					k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
+					SEGGER_RTT_printf(0, " --- USB ERR --- : Reallocate memory for buffer Failed!\n");
+
+					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+					return;
+				}            
 			}
 
 			err = parseNextByte(byteBuf, &context_USB);
@@ -125,6 +147,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					break;
 				}
 
+				k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 				k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 				return;
 			}
@@ -134,6 +157,8 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				if (err != 0)
 				{
 					SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);
+
+					k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 					return;
 				}
@@ -168,11 +193,6 @@ K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessageTX), 4, 1);
 void usb_thread(void)
 {	
 	tUniversalMessageTX pkt;
-
-	for (uint16_t i = 0; i < COUNT_USB_RX_POOL_BUFFERS; i++) 
-	{
-		poolBuffersRX_USB[i].data = dataPoolBuffersRX_USB[i];
-	}
 
     while (1) 
     {

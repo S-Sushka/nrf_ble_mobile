@@ -24,7 +24,7 @@ void parser_thread()
     tUniversalMessageRX *pkt;   
 
     tUniversalMessageTX pkt_echo;
-    uint8_t data_echo[MESSAGE_BUFFER_SIZE];
+    uint8_t data_echo[PROTOCOL_MAX_PACKET_LENGTH];
 
 
     pkt_echo.data = data_echo;
@@ -37,6 +37,9 @@ void parser_thread()
         {
             pkt_echo.source = pkt->source;
             pkt_echo.length = pkt->length;
+
+            SEGGER_RTT_printf(0, "PACKET LEN: %d\n", pkt_echo.length);
+
             for (int i = 0; i < pkt->length; i++) 
                 data_echo[i] = pkt->data[i];
 
@@ -72,10 +75,11 @@ void parser_thread()
             }
         }
 
+        k_heap_free(&UniversalHeapRX, pkt->data);
         pkt->inUse = 0;
     }
 }
-K_THREAD_DEFINE(parser_thread_id, 2048, parser_thread, NULL, NULL, NULL, 7, 0, 0);
+K_THREAD_DEFINE(parser_thread_id, THREAD_STACK_SIZE_PARSER, parser_thread, NULL, NULL, NULL, THREAD_PRIORITY_PARSER, 0, 0);
 
 
 void _DEBUG_printBuffer(const char *prefix, uint8_t *data, uint16_t length) 

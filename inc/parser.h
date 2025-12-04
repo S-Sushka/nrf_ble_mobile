@@ -14,6 +14,11 @@
 #include "PROTOCOL.h"
 
 
+
+#define THREAD_STACK_SIZE_PARSER   8192
+#define THREAD_PRIORITY_PARSER     7
+
+
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
