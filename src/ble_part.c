@@ -196,7 +196,7 @@ static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
             {
                 currentPoolBuffersRX_BLE[i]->inUse = 0;
                 currentPoolBuffersRX_BLE[i] = NULL;
-                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[i]->data);
+                heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[i]->data);
             }            
 
             BT_TRANSPORT_NOTIFY_States[i] = 0;
@@ -576,12 +576,16 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
         if (!currentPoolBuffersRX_BLE[conn_index]->data)
         {
             SEGGER_RTT_printf(0, " --- BLE ERR --- : Allocate memory for buffer Failed!\n");
+            
+            heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
             return len;
         }        
     }
     else
     {
         SEGGER_RTT_printf(0, " --- BLE ERR --- : There are no free buffers!\n");
+
+        heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
         return len;
     }
 
@@ -594,8 +598,9 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                 k_heap_realloc(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data, PROTOCOL_INDEX_PL_START+context_BLE[conn_index].lenPayloadBuf+PROTOCOL_END_PART_SIZE, K_NO_WAIT);
             if (!currentPoolBuffersRX_BLE[conn_index]->data)
             {
-                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
                 SEGGER_RTT_printf(0, " --- BLE ERR --- : Reallocate memory for buffer Failed!\n");
+
+                heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
                 return len;
             }            
         }
@@ -619,7 +624,7 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
             break;                        
             }
 
-            k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
+            heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
             return len;
         }
         else if (err > 0) 
@@ -628,7 +633,8 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
             if (err != 0)
             {
                 SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
-                k_heap_free(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
+
+                heapFreeWithCheck(&UniversalHeapRX, currentPoolBuffersRX_BLE[conn_index]->data);
                 return len;
             }
         }

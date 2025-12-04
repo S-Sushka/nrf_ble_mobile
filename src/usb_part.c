@@ -98,6 +98,8 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 						if (!currentPoolBufferRX_USB->data)
 						{
 							SEGGER_RTT_printf(0, " --- USB ERR --- : Allocate memory for buffer Failed!\n");
+
+							heapFreeWithCheck(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 							k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 							return;
 						}						
@@ -105,6 +107,8 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					else
 					{
 						SEGGER_RTT_printf(0, " --- USB ERR --- : There are no free buffers!\n");
+
+						heapFreeWithCheck(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 						return;
 					}
@@ -120,9 +124,9 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					k_heap_realloc(&UniversalHeapRX, currentPoolBufferRX_USB->data, PROTOCOL_INDEX_PL_START+context_USB.lenPayloadBuf+PROTOCOL_END_PART_SIZE, K_NO_WAIT);
 				if (!currentPoolBufferRX_USB->data)
 				{
-					k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 					SEGGER_RTT_printf(0, " --- USB ERR --- : Reallocate memory for buffer Failed!\n");
 
+					heapFreeWithCheck(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 					return;
 				}            
@@ -147,7 +151,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 					break;
 				}
 
-				k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
+				heapFreeWithCheck(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 				k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 				return;
 			}
@@ -158,7 +162,7 @@ static void usb_rx_handler(const struct device *dev, void *user_data)
 				{
 					SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);
 
-					k_heap_free(&UniversalHeapRX, currentPoolBufferRX_USB->data);
+					heapFreeWithCheck(&UniversalHeapRX, currentPoolBufferRX_USB->data);
 					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
 					return;
 				}

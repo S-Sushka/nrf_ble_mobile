@@ -92,6 +92,8 @@ typedef struct
 
 
 
+int heapFreeWithCheck(struct k_heap *heap, void *data);
+
 uint16_t calculateCRC(uint8_t *data, uint16_t length);
 int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
 

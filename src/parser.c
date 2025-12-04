@@ -75,7 +75,7 @@ void parser_thread()
             }
         }
 
-        k_heap_free(&UniversalHeapRX, pkt->data);
+        heapFreeWithCheck(&UniversalHeapRX, pkt->data);
         pkt->inUse = 0;
     }
 }

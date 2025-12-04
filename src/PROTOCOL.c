@@ -13,6 +13,15 @@ K_HEAP_DEFINE(UniversalHeapRX, UNIVERSAL_RX_HEAP_SIZE);
 
 
 
+int heapFreeWithCheck(struct k_heap *heap, void *data) 
+{
+	if (!heap || !data)
+		return -EINVAL;
+
+	k_heap_free(heap, data);
+	return 0;
+}
+
 uint16_t calculateCRC(uint8_t *data, uint16_t length)
 {
 	uint16_t crc = 0xFFFF;
