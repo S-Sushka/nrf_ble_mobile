@@ -15,7 +15,7 @@
 
 
 
-K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessage *), 4, 1);
+K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessage *), QUEUE_SIZE_PARSER, 1);
 
 
 void parser_thread()
@@ -23,7 +23,6 @@ void parser_thread()
     int err = 0;
 
     tUniversalMessage *pkt;   
-
     tUniversalMessage *pkt_echo = NULL;
     
 
@@ -31,6 +30,7 @@ void parser_thread()
     {
         k_msgq_get(&parser_queue, &pkt, K_FOREVER);
         _DEBUG_printBuffer("RX", pkt->data, pkt->length);
+
 
         if (pkt->data[PROTOCOL_INDEX_MSG_TYPE] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
         {

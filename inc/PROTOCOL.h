@@ -14,14 +14,16 @@
 
 
 
-#define UNIVERSAL_RX_HEAP_SIZE		4096
-#define COUNT_BLE_RX_POOL_BUFFERS	4
-
-
-
 #define UNIVERSAL_TRANSPORT_HEAP_SIZE	16384
 
+#define QUEUE_SIZE_USB_TX	64
+#define QUEUE_SIZE_BLE_TX	32
 
+#define QUEUE_SIZE_PARSER	16
+
+
+
+extern struct k_heap UniversalTransportHeap;
 
 typedef enum 
 {
@@ -29,31 +31,6 @@ typedef enum
 	MESSAGE_SOURCE_BLE_CONNS,
 } tMessageSources;
 
-
-typedef struct
-{
-	tMessageSources source; // Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
-
-	uint8_t *data;  		// Указатель на передаваемое сообщение 
-	uint16_t length;		// Длина передаваемого сообщения
-} tUniversalMessageTX;
-
-extern struct k_heap UniversalHeapRX;
-typedef struct
-{
-	tMessageSources source; 			// Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
-
-	uint8_t *data;						// Указатель на буфер принимаемого сообщения
-	uint16_t length;    				// Длина принимаемого сообщения
-
-	uint8_t inUse;						// Флаг занятости буфера. После того, как обработали данные, записываем 0
-} tUniversalMessageRX;
-
-
-
-
-
-extern struct k_heap UniversalTransportHeap;
 typedef struct
 {
 	tMessageSources source; // Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
@@ -71,11 +48,10 @@ typedef struct
 	uint16_t checksumBuffer;
 } tParcingContext;
 
+
+
 void freeUniversalMessage(tUniversalMessage *packet);
 void freeParcingContex(tParcingContext *context);
-
-
-int parseByte(uint8_t newByte, tParcingContext *context);
 
 
 
@@ -124,30 +100,13 @@ int parseByte(uint8_t newByte, tParcingContext *context);
 #define PROTOCOL_MSG_CODE_SET_SYSTEM_MODE		0x20
 #define PROTOCOL_MSG_CODE_SET_SYSTEM_REG		0xF0
 #define PROTOCOL_MSG_CODE_SET_LIFE_CYCLE		0xF1
-#define PROTOCOL_MSG_CODE_FOR_DEBUG 0
-
-#define PROTOCOL_MSG_CODES { PROTOCOL_MSG_CODE_GET_DEVICE_INFO, PROTOCOL_MSG_CODE_DO_SELF_CHECK, PROTOCOL_MSG_CODE_GET_ALL_USR_SETTINGS, \
-						PROTOCOL_MSG_CODE_GET_USR_SETTING, PROTOCOL_MSG_CODE_SET_USR_SETTING, PROTOCOL_MSG_CODE_GET_BATTERY_INFO, \
-						PROTOCOL_MSG_CODE_SET_SYSTEM_MODE, PROTOCOL_MSG_CODE_SET_SYSTEM_REG, PROTOCOL_MSG_CODE_SET_LIFE_CYCLE, \
-					PROTOCOL_MSG_CODE_FOR_DEBUG }
 
 
-
-int heapFreeWithCheck(struct k_heap *heap, void *data);
+int protocolCheckMT(uint8_t MT);
+int protocolCheckPayloadLength(uint16_t length);
 
 uint16_t calculateCRC(uint8_t *data, uint16_t length);
-int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
 
-
-typedef struct 
-{
-	tUniversalMessageRX *messageBuf;
-
-    uint16_t lenPayloadBuf;
-    uint16_t crcValueBuf;
-
-    uint8_t buildPacket;
-} tParcingProcessData;
 
 /*
 	Универсальная функция для парсинга приходящих пакетов. 
@@ -155,10 +114,6 @@ typedef struct
 	Возвращает <0 - если ошибка; 0 - если байт запарсен успешно; >0 - длина, если пакет запарсен успешно
 */
 
-int parseNextByte(uint8_t newByte, tParcingProcessData *context);
+int parseNextByte(uint8_t newByte, tParcingContext *context);
 
 
-
-int protocolCheckMT(uint8_t MT);
-int protocolCheckMC(uint8_t MC);
-int protocolCheckPayloadLength(uint16_t length);

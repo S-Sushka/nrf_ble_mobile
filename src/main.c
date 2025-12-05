@@ -6,7 +6,7 @@
  * All right reserved
  */
 
-
+ 
 #include "main.h"
 
 #include "parser.h"
@@ -31,7 +31,7 @@ uint16_t USB_RX_TIMEOUT_VALUE;
 // >>> MAIN <<<
 // *******************************************************************
 
-void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet);
+void incrementTestNotifyPacket(tUniversalMessage *notify_packet);
 void main_thread(void)
 {	
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
@@ -44,7 +44,7 @@ void main_thread(void)
 	settings_init_load();
 
 
-	ble_begin(&UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
+	ble_begin(500, &UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
 	usb_begin(USB_RX_TIMEOUT_VALUE);
 	
 	
@@ -52,7 +52,7 @@ void main_thread(void)
 	uint8_t battery_level = 0;
 	uint8_t battery_level_status = 0;
 
-	tUniversalMessageTX notify_packet;
+	tUniversalMessage notify_packet;
 	uint8_t notify_data[9];
 	notify_packet.data = notify_data;
 
@@ -197,7 +197,7 @@ int settings_init_load()
 
 		
 
-void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet) 
+void incrementTestNotifyPacket(tUniversalMessage *notify_packet) 
 {
 	static uint8_t TestNotifyValue = 255;
 	TestNotifyValue++;

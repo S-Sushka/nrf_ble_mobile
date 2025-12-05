@@ -24,7 +24,7 @@ static tParcingContext *resetContexByTimeout = NULL;
 static uint16_t USB_RX_TIMEOUT = 0;
 
 
-K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessage *), 4, 1);
+K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessage *), QUEUE_SIZE_USB_TX, 1);
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
@@ -114,13 +114,13 @@ void usb_thread(void)
 			freeUniversalMessage(txPacket);
 		}
 
-		if (k_sem_take(&usb_rx_sem, K_NO_WAIT) == 0) 
+		if (k_sem_take(&usb_rx_sem, K_NO_WAIT) == 0) // RX
 		{
-			while (uart_fifo_read(uart_cdc_dev, &byteBuf, 1)) // RX
+			while (uart_fifo_read(uart_cdc_dev, &byteBuf, 1))
 			{
 				k_work_reschedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT));
 
-				err = parseByte(byteBuf, &rxPacketContext);
+				err = parseNextByte(byteBuf, &rxPacketContext);
 
 				if (err < 0) 
 				{
@@ -162,7 +162,7 @@ void usb_thread(void)
 					err = k_msgq_put(&parser_queue, &rxPacketContext.rxPacket, K_NO_WAIT);
 					if (err != 0)
 					{
-						SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);
+						SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser Queue Put from BLE Error: %d\n", err);
 					}
 
 					freeParcingContex(&rxPacketContext);

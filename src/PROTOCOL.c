@@ -12,8 +12,6 @@
 
 K_HEAP_DEFINE(UniversalTransportHeap, UNIVERSAL_TRANSPORT_HEAP_SIZE);
 
-K_HEAP_DEFINE(UniversalHeapRX, UNIVERSAL_RX_HEAP_SIZE);
-
 
 
 int heapFreeWithCheck(struct k_heap *heap, void *data) 
@@ -48,103 +46,6 @@ uint16_t calculateCRC(uint8_t *data, uint16_t length)
   return crc;
 }
 
-int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen)
-{
-	for (uint8_t i = 0; i < poolBuffersLen; i++)
-	{
-		if (!poolBuffers[i].inUse)
-		{
-			poolBuffers[i].inUse = 1;
-			*ptrBuffer = &poolBuffers[i];
-			return 0;
-		}
-	}
-
-	return -1;
-}
-
-
-int parseNextByte(uint8_t newByte, tParcingProcessData *context) 
-{
-	if (!context->buildPacket)
-	{
-		if (newByte == PROTOCOL_PREAMBLE)
-		{
-			context->buildPacket = 1;
-			context->messageBuf->length = 0;
-			context->messageBuf->inUse = 1;
-
-			context->lenPayloadBuf = 0;
-			context->crcValueBuf = 0;
-		}
-		else
-			return 0;
-	}
-
-	context->messageBuf->data[context->messageBuf->length] = newByte;
-
-	if (context->messageBuf->length == PROTOCOL_INDEX_PL_LEN_MSB) // LEN MSB
-	{
-		context->lenPayloadBuf = newByte;
-		context->lenPayloadBuf <<= 8;
-	}
-	else if (context->messageBuf->length == PROTOCOL_INDEX_PL_LEN_LSB) // LEN LSB
-	{
-		context->lenPayloadBuf |= newByte;
-		if (context->lenPayloadBuf > PROTOCOL_MAX_PACKET_LENGTH)
-		{
-			context->buildPacket = 0;
-			context->messageBuf->inUse = 0;
-			return -EMSGSIZE;
-		}
-	}
-	else if (context->messageBuf->length >= PROTOCOL_INDEX_PL_START)
-	{
-		if (context->messageBuf->length >= context->lenPayloadBuf + PROTOCOL_INDEX_PL_START)
-		{
-			if (context->messageBuf->length == context->lenPayloadBuf + PROTOCOL_INDEX_PL_START) // End Mark
-			{
-				if (newByte != PROTOCOL_END_MARK)
-				{
-					context->buildPacket = 0;
-					context->messageBuf->inUse = 0;
-					return -EPROTO;
-				}
-			}
-			else if (context->messageBuf->length == context->lenPayloadBuf + PROTOCOL_INDEX_PL_START + 1) // CRC MSB
-			{
-				context->crcValueBuf = newByte;
-				context->crcValueBuf <<= 8;
-			}
-			else if (context->messageBuf->length == context->lenPayloadBuf + PROTOCOL_INDEX_PL_START + 2) // CRC LSB
-			{
-				context->crcValueBuf |= newByte;
-
-
-				uint16_t crcCalculatedBuf = calculateCRC(context->messageBuf->data, PROTOCOL_INDEX_PL_START + context->lenPayloadBuf + 1);
-				if (context->crcValueBuf != crcCalculatedBuf)
-				{
-					context->buildPacket = 0;
-					context->messageBuf->inUse = 0;					
-					return -EBADMSG;
-				}
-
-				// Конец
-				context->messageBuf->length++;
-				context->buildPacket = 0; 
-				return context->messageBuf->length;
-			}
-		}
-	}
-
-	context->messageBuf->length++;
-	return 0;
-}
-
-
-
-
-
 
 
 // *******************************************************************
@@ -165,21 +66,6 @@ int protocolCheckMT(uint8_t MT)
 	}
 	
 	return -EPROTO;
-}
-
-int protocolCheckMC(uint8_t MC) 
-{ 
-	uint8_t messageCodes[] = PROTOCOL_MSG_CODES;
-
-	for (int i = 0; i < sizeof(messageCodes); i++) 
-	{
-		if (MC == messageCodes[i])
-		{
-			return 0; 
-		}
-	}
-	
-	return -EPROTO;	
 }
 
 int protocolCheckPayloadLength(uint16_t length) 
@@ -210,8 +96,6 @@ int processByte(uint8_t newByte, tParcingContext *context)
 			return -EPROTO;
 		break;
 	case PROTOCOL_INDEX_MSG_CODE:
-		if (protocolCheckMC(newByte) < 0)
-			return -EPROTO;
 		break;
 	case PROTOCOL_INDEX_PL_LEN_MSB:
 		context->payloadLength = newByte;
@@ -263,7 +147,7 @@ int processByte(uint8_t newByte, tParcingContext *context)
 	return 0;
 }
 
-int parseByte(uint8_t newByte, tParcingContext *context) 
+int parseNextByte(uint8_t newByte, tParcingContext *context) 
 {
 	int err = 0;
 
