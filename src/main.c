@@ -60,32 +60,32 @@ void main_thread(void)
 
     while (1) 
     {
-		// BAS
-		if (battery_level >= 100)
-			battery_level = 0;
-		else
-			battery_level += 10;
-		ble_bas_set_battery_level(battery_level);
+		// // BAS
+		// if (battery_level >= 100)
+		// 	battery_level = 0;
+		// else
+		// 	battery_level += 10;
+		// ble_bas_set_battery_level(battery_level);
 
-		if (battery_level_status >= 0x0F)
-			battery_level_status = 0;
-		else
-			battery_level_status++;
-		ble_bas_set_battery_level_status(battery_level_status);	
+		// if (battery_level_status >= 0x0F)
+		// 	battery_level_status = 0;
+		// else
+		// 	battery_level_status++;
+		// ble_bas_set_battery_level_status(battery_level_status);	
 
-		// TRANSPORT
-		incrementTestNotifyPacket(&notify_packet);
+		// // TRANSPORT
+		// incrementTestNotifyPacket(&notify_packet);
 		
-		notify_packet.source = MESSAGE_SOURCE_USB;
-		err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
-        if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+		// notify_packet.source = MESSAGE_SOURCE_USB;
+		// err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
+        // if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
 
-		for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
-		{
-			notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
-			err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
-        	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
-		}
+		// for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
+		// {
+		// 	notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
+		// 	err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
+        // 	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
+		// }
 
 		k_msleep(10000);
     }   	
@@ -106,7 +106,7 @@ int settings_init_save()
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 	};
-	uint16_t usb_rx_timeout_buf = 150;
+	uint16_t usb_rx_timeout_buf = 500;
 
 	
 	// UUIDs
@@ -203,11 +203,11 @@ void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet)
 	TestNotifyValue++;
 
 	notify_packet->data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
-	notify_packet->data[PROTOCOL_INDEX_MT] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
-	notify_packet->data[PROTOCOL_INDEX_MC] 			= 0;
+	notify_packet->data[PROTOCOL_INDEX_MSG_TYPE] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
+	notify_packet->data[PROTOCOL_INDEX_MSG_CODE] 			= 0;
 
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN] 		= 0;
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN+1] 	= 1;
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN_MSB] 		= 0;
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN_LSB] 	= 1;
 
 	notify_packet->data[PROTOCOL_INDEX_PL_START] 	= TestNotifyValue;
 

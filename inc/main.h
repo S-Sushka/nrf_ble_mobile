@@ -17,7 +17,7 @@
 
 
 
-#define THREAD_STACK_SIZE_MAIN  2048
+#define THREAD_STACK_SIZE_MAIN  8192
 #define THREAD_PRIORITY_MAIN    0
 
 #define NVS_PATH_FACTORY_DATA_FD_FLAGS                          "factory_data/FD_FLAGS"

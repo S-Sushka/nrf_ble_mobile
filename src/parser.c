@@ -15,17 +15,17 @@
 
 
 
-K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessageRX *), 4, 1);
+K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessage *), 4, 1);
 
 
-static uint8_t data_echo[PROTOCOL_MAX_PACKET_LENGTH];
+static uint8_t data_echo[1024];
 void parser_thread()
 {
     int err = 0;
 
-    tUniversalMessageRX *pkt;   
+    tUniversalMessage *pkt;   
 
-    tUniversalMessageTX pkt_echo;
+    tUniversalMessage pkt_echo;
     pkt_echo.data = data_echo;
 
     while (1) 
@@ -33,7 +33,7 @@ void parser_thread()
         k_msgq_get(&parser_queue, &pkt, K_FOREVER);
         _DEBUG_printBuffer("RX", pkt->data, pkt->length);
 
-        if (pkt->data[PROTOCOL_INDEX_MT] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
+        if (pkt->data[PROTOCOL_INDEX_MSG_TYPE] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
         {
             pkt_echo.source = pkt->source;
             pkt_echo.length = pkt->length;
@@ -45,36 +45,35 @@ void parser_thread()
             uint16_t payloadLenBuf = 0;
 
 
-            pkt_echo.data[PROTOCOL_INDEX_MT] = PROTOCOL_MSG_TYPE_PR_ANSWER;
+            pkt_echo.data[PROTOCOL_INDEX_MSG_TYPE] = PROTOCOL_MSG_TYPE_PR_ANSWER;
 
-            payloadLenBuf = pkt_echo.data[PROTOCOL_INDEX_PL_LEN];
+            payloadLenBuf = pkt_echo.data[PROTOCOL_INDEX_PL_LEN_MSB];
             payloadLenBuf <<= 8;
-            payloadLenBuf |= pkt_echo.data[PROTOCOL_INDEX_PL_LEN+1];
+            payloadLenBuf |= pkt_echo.data[PROTOCOL_INDEX_PL_LEN_LSB];
 
             crcCalculatedBuf = calculateCRC(pkt_echo.data, payloadLenBuf+PROTOCOL_INDEX_PL_START+1);
 
             pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+2] = crcCalculatedBuf;
             crcCalculatedBuf >>= 8;
             pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf;
-            
 
-            _DEBUG_printBuffer("TX", pkt_echo.data, pkt_echo.length);
-            if (pkt->source == MESSAGE_SOURCE_USB)
-            {
-                err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
-                if (err != 0)
-                    SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
-            }
-            else
-            {
-                err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
-                if (err != 0)
-                    SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
-            }
+             _DEBUG_printBuffer("TX", pkt_echo.data, pkt_echo.length);
         }
+        //     if (pkt->source == MESSAGE_SOURCE_USB)
+        //     {
+        //         err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
+        //         if (err != 0)
+        //             SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+        //     }
+        //     else
+        //     {
+        //         err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
+        //         if (err != 0)
+        //             SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
+        //     }
+        // }
 
-        heapFreeWithCheck(&UniversalHeapRX, pkt->data);
-        pkt->inUse = 0;
+        freeUniversalMessage(pkt);
     }
 }
 K_THREAD_DEFINE(parser_thread_id, THREAD_STACK_SIZE_PARSER, parser_thread, NULL, NULL, NULL, THREAD_PRIORITY_PARSER, 0, 0);

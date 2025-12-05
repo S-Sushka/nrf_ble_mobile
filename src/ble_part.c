@@ -355,33 +355,33 @@ void ble_thread(void)
 
     while (1) 
     {
-		k_msgq_get(&ble_queue_tx, &pkt, K_FOREVER);
-        conn_index = pkt.source - MESSAGE_SOURCE_BLE_CONNS;
+		// k_msgq_get(&ble_queue_tx, &pkt, K_FOREVER);
+        // conn_index = pkt.source - MESSAGE_SOURCE_BLE_CONNS;
 
-        // Notify
-        if ( !(conn_index >= 0 && conn_index < CONFIG_BT_MAX_CONN) ) 
-        {
-            SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Incorrect Source!\n");
-            continue;
-        }
+        // // Notify
+        // if ( !(conn_index >= 0 && conn_index < CONFIG_BT_MAX_CONN) ) 
+        // {
+        //     SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Incorrect Source!\n");
+        //     continue;
+        // }
 
-        if (!conns[conn_index])
-            continue;
+        // if (!conns[conn_index])
+        //     continue;
 
-        if (!pkt.data || pkt.length >= PROTOCOL_MAX_PACKET_LENGTH)
-        {
-            SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Bad Data!\n");
-            continue;
-        }        
+        // if (!pkt.data || pkt.length >= PROTOCOL_MAX_PACKET_LENGTH)
+        // {
+        //     SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Bad Data!\n");
+        //     continue;
+        // }        
 
-        bt_conn_ref(conns[conn_index]);
-        if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY)) 
-        {
-            int err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt.data, pkt.length);
-            if (err < 0)
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
-        }
-        bt_conn_unref(conns[conn_index]);
+        // bt_conn_ref(conns[conn_index]);
+        // if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY)) 
+        // {
+        //     int err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt.data, pkt.length);
+        //     if (err < 0)
+        //         SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+        // }
+        // bt_conn_unref(conns[conn_index]);
     }   	
 }
 
