@@ -24,7 +24,7 @@ static tParcingContext *resetContexByTimeout = NULL;
 static uint16_t USB_RX_TIMEOUT = 0;
 
 
-K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessage), 4, 1);
+K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessage *), 4, 1);
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
@@ -82,7 +82,7 @@ static void usb_timeout_handler(struct k_work *work)
 {
 	freeUniversalMessage(resetContexByTimeout->rxPacket);
 	freeParcingContex(resetContexByTimeout);
-	
+
 	// SEGGER_RTT_printf(0, " --- USB DBG --- :  USB Packet RX Timeout\n");
 }
 
@@ -96,7 +96,7 @@ void usb_thread(void)
 {	
 	int err = 0;
 
-	tUniversalMessage  	txPacket;
+	tUniversalMessage  	*txPacket;
 	tParcingContext		rxPacketContext;
 
 	freeParcingContex(&rxPacketContext);
@@ -108,8 +108,10 @@ void usb_thread(void)
     {
 		if (k_msgq_get(&usb_queue_tx, &txPacket, K_NO_WAIT) == 0) // TX
 		{
-			for (int i = 0; i < txPacket.length; i++)
-				uart_poll_out(uart_cdc_dev, txPacket.data[i]);
+			for (int i = 0; i < txPacket->length; i++)
+				uart_poll_out(uart_cdc_dev, txPacket->data[i]);
+
+			freeUniversalMessage(txPacket);
 		}
 
 		if (k_sem_take(&usb_rx_sem, K_NO_WAIT) == 0) 

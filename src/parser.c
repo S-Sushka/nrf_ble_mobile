@@ -18,15 +18,14 @@
 K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessage *), 4, 1);
 
 
-static uint8_t data_echo[1024];
 void parser_thread()
 {
     int err = 0;
 
     tUniversalMessage *pkt;   
 
-    tUniversalMessage pkt_echo;
-    pkt_echo.data = data_echo;
+    tUniversalMessage *pkt_echo = NULL;
+    
 
     while (1) 
     {
@@ -35,43 +34,55 @@ void parser_thread()
 
         if (pkt->data[PROTOCOL_INDEX_MSG_TYPE] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
         {
-            pkt_echo.source = pkt->source;
-            pkt_echo.length = pkt->length;
+            pkt_echo = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
+            if (!pkt_echo) 
+            {
+                SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Echo Message Failed!\n");
+                continue;
+            }
+
+            pkt_echo->source = pkt->source;
+            pkt_echo->length = pkt->length;
+            pkt_echo->data = k_heap_alloc(&UniversalTransportHeap, pkt->length, K_NO_WAIT);
+            if (!pkt_echo->data) 
+            {
+                SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Data For Echo Message Failed!\n");
+                continue;
+            }
 
             for (int i = 0; i < pkt->length; i++) 
-               data_echo[i] = pkt->data[i];
+               pkt_echo->data[i] = pkt->data[i];
 
             uint16_t crcCalculatedBuf = 0;
             uint16_t payloadLenBuf = 0;
 
 
-            pkt_echo.data[PROTOCOL_INDEX_MSG_TYPE] = PROTOCOL_MSG_TYPE_PR_ANSWER;
+            pkt_echo->data[PROTOCOL_INDEX_MSG_TYPE] = PROTOCOL_MSG_TYPE_PR_ANSWER;
 
-            payloadLenBuf = pkt_echo.data[PROTOCOL_INDEX_PL_LEN_MSB];
+            payloadLenBuf = pkt_echo->data[PROTOCOL_INDEX_PL_LEN_MSB];
             payloadLenBuf <<= 8;
-            payloadLenBuf |= pkt_echo.data[PROTOCOL_INDEX_PL_LEN_LSB];
+            payloadLenBuf |= pkt_echo->data[PROTOCOL_INDEX_PL_LEN_LSB];
 
-            crcCalculatedBuf = calculateCRC(pkt_echo.data, payloadLenBuf+PROTOCOL_INDEX_PL_START+1);
+            crcCalculatedBuf = calculateCRC(pkt_echo->data, payloadLenBuf+PROTOCOL_INDEX_PL_START+1);
 
-            pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+2] = crcCalculatedBuf;
+            pkt_echo->data[payloadLenBuf+PROTOCOL_INDEX_PL_START+2] = crcCalculatedBuf;
             crcCalculatedBuf >>= 8;
-            pkt_echo.data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf;
+            pkt_echo->data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf;
 
-             _DEBUG_printBuffer("TX", pkt_echo.data, pkt_echo.length);
+            _DEBUG_printBuffer("TX", pkt_echo->data, pkt_echo->length);
+            if (pkt->source == MESSAGE_SOURCE_USB)
+            {
+                err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
+                if (err != 0)
+                    SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+            }
+            else
+            {
+                err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
+                if (err != 0)
+                    SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
+            }
         }
-        //     if (pkt->source == MESSAGE_SOURCE_USB)
-        //     {
-        //         err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
-        //         if (err != 0)
-        //             SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
-        //     }
-        //     else
-        //     {
-        //         err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
-        //         if (err != 0)
-        //             SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
-        //     }
-        // }
 
         freeUniversalMessage(pkt);
     }
