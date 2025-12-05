@@ -25,7 +25,7 @@
 
 
 
-#define THREAD_STACK_SIZE_USB   16384
+#define THREAD_STACK_SIZE_USB   8192
 #define THREAD_PRIORITY_USB     7
 
 

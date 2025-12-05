@@ -118,7 +118,7 @@ void usb_thread(void)
 		{
 			while (uart_fifo_read(uart_cdc_dev, &byteBuf, 1))
 			{
-				k_work_reschedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT));
+				k_work_reschedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем таймаут 
 
 				err = parseNextByte(byteBuf, &rxPacketContext);
 

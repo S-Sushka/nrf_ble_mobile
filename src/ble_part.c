@@ -589,7 +589,7 @@ static void rx_transport(struct k_work *work)
         err = parseNextByte(byteBuf, &rxPacketContextBLE[conn_index]);
 
 
-        k_work_reschedule(&ble_timeout_work, K_MSEC(BLE_RX_TIMEOUT));
+        k_work_reschedule(&ble_timeout_work, K_MSEC(BLE_RX_TIMEOUT)); // Запускаем таймаут 
         if (err < 0)
         {
             k_work_cancel_delayable(&ble_timeout_work); // Останавливаем ожидание таймаута
