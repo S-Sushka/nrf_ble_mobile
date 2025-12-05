@@ -13,6 +13,8 @@
 
 static struct bt_conn *conns[CONFIG_BT_MAX_CONN];
 
+uint16_t BT_MTU_BUF[CONFIG_BT_MAX_CONN];
+
 static void ble_timeout_handler(struct k_work *work);
 static struct k_work_delayable  ble_timeout_work;
 static uint16_t BLE_RX_TIMEOUT;
@@ -97,6 +99,7 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 			       const struct bt_gatt_attr *attr, const void *buf,
 			       uint16_t len, uint16_t offset, uint8_t flags);
 
+void send_transport_notify_by_parts(int conn_index, tUniversalMessage *pkt);
 static void rx_transport(struct k_work *work);
 
 
@@ -116,6 +119,7 @@ static tParcingContext	rxPacketContextBLE[CONFIG_BT_MAX_CONN];
 static struct bt_gatt_ccc_managed_user_data TRANSPORT_CCC = BT_GATT_CCC_MANAGED_USER_DATA_INIT(NULL, NULL, NULL);
 static uint8_t BT_TRANSPORT_NOTIFY_States[CONFIG_BT_MAX_CONN] = { 0 };
 
+uint16_t BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[CONFIG_BT_MAX_CONN]; // Счётчик чанков для отлова ошибки переполнения
 static uint8_t BT_TRANSPORT_WRITE_dummyBuffer[CONFIG_BT_L2CAP_TX_MTU];
 struct bt_gatt_attr TRANSPORT_ATTRIBUTES[] = 
 {
@@ -159,8 +163,16 @@ static struct k_work restart_adv_work;
 // Коллбэки Стека
 // *******************************************************************
 
+
+
 static void BT_MTU_UPDATED(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
+    int conn_index = BT_GET_INDEX_BY_CONN(conn);    
+    if (conn_index >= 0) 
+    {
+        BT_MTU_BUF[conn_index] = bt_gatt_get_mtu(conn);
+    }
+
     SEGGER_RTT_printf(0, " --- BLE --- :  Updated MTU: TX %d RX %d bytes\n", tx, rx);
 }
 
@@ -177,6 +189,8 @@ static void BT_CONNECTED(struct bt_conn *conn, uint8_t err)
             if (!conns[i]) 
             {
                 conns[i] = bt_conn_ref(conn);
+                BT_MTU_BUF[i] = bt_gatt_get_mtu(conn);
+
                 bt_addr_le_to_str(bt_conn_get_dst(conn), addr_str, BT_ADDR_STR_LEN);
 
                 k_work_submit(&restart_adv_work); // Перезапускаем Advertisement
@@ -365,10 +379,13 @@ int ble_begin(uint16_t rx_timeout_ms,
 
 K_MSGQ_DEFINE(ble_queue_tx, sizeof(tUniversalMessage *), QUEUE_SIZE_BLE_TX, 1);
 
+
 void ble_thread(void)
 {	
-	tUniversalMessage *pkt;
     int conn_index = 0;
+
+	tUniversalMessage *pkt;
+
 
     while (1) 
     {
@@ -391,15 +408,7 @@ void ble_thread(void)
             continue;
         }        
 
-        // TODO 
-        bt_conn_ref(conns[conn_index]);
-        if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY)) 
-        {
-            int err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data, pkt->length);
-            if (err < 0)
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
-        }
-        bt_conn_unref(conns[conn_index]);
+        send_transport_notify_by_parts(conn_index, pkt);
 
         freeUniversalMessage(pkt);
     }   	
@@ -563,6 +572,59 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_BATTERY_LEVEL_STATUS(struct bt_conn *conn,
 
 // Сервис - TRANSPORT
 
+void send_transport_notify_by_parts(int conn_index, tUniversalMessage *pkt)
+{
+    int err = 0;
+    int blockSize = 0;
+
+
+    blockSize = BT_MTU_BUF[conn_index] - 3;
+    if (blockSize <= 0)
+    {
+        return;
+    }
+
+
+    bt_conn_ref(conns[conn_index]);
+    if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY))
+    {
+        if (pkt->length < blockSize) // Сообщение влезет в одну посылку
+        {
+            err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data, pkt->length);
+            if (err < 0)
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+        }
+        else // Отправляем сообщение поблочно
+        {
+            uint16_t blocksCount = 0;
+            uint16_t offsetValue = 0;
+
+
+            blocksCount = pkt->length / blockSize;
+
+            for (int i = 0; i < blocksCount; i++)
+            {
+                offsetValue = i * blockSize;
+                err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data + offsetValue, blockSize);
+                if (err < 0)
+                {
+                    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+                    break;
+                }
+            }
+
+            if (err >= 0 && (pkt->length % blockSize) != 0) // Досылаем последнюю часть, если не влезло
+            {
+                offsetValue = blocksCount * blockSize;
+                err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data + offsetValue, pkt->length - blocksCount * blockSize);
+                if (err < 0)
+                    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+            }
+        }
+    }
+    bt_conn_unref(conns[conn_index]);
+}
+
 static void ble_timeout_handler(struct k_work *work) 
 {
     int conn_index = 0;
@@ -642,12 +704,6 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags)
 {
-
-    /*
-        Если у нас маленький MTU и мы хотим передать много данных, nRF52840 возвращает оишбку 0x09. 
-        Надо подумать, как её ловить и логировать
-    */
-
     if (flags & BT_GATT_WRITE_FLAG_EXECUTE) // Пропускаем буфер со всеми данными после prepare write
     {
         return len;
@@ -665,7 +721,25 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
 		SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Bad Data!\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
-       
+
+
+    if (flags & BT_GATT_WRITE_FLAG_PREPARE) // Ловим ошибку с переполнением для логирования
+    {
+        if (offset == 0)
+            BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index] = 0;
+        
+        BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index]++;
+
+        if (BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index] > CONFIG_BT_ATT_PREPARE_COUNT)
+        {
+            SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Too Many Blocks! Try to Expand MTU\n");
+
+            k_work_cancel_delayable(&ble_timeout_work); // Останавливаем ожидание таймаута
+            freeParcingContex(&rxPacketContextBLE[conn_index]);
+            return BT_GATT_ERR(BT_ATT_ERR_PREPARE_QUEUE_FULL);
+        }
+    }
+
 
     if ((flags & BT_GATT_WRITE_FLAG_PREPARE) || (flags == 0)) // Часть prepare write || обычный write
     {
