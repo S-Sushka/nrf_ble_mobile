@@ -21,13 +21,15 @@
 #include "PROTOCOL.h"
 
 
-#define THREAD_STACK_SIZE_BLE   2048
+
+#define THREAD_STACK_SIZE_BLE   8192
 #define THREAD_PRIORITY_BLE     7
 
 
 extern struct k_msgq ble_queue_tx;  // Очередь отправки пакетов по BLE
 
-int ble_begin(struct bt_uuid_128 *transport_service_uuid, 
+int ble_begin(uint16_t rx_timeout_ms, 
+            struct bt_uuid_128 *transport_service_uuid, 
             struct bt_uuid_128 *transport_characteristic_in_uuid, 
             struct bt_uuid_128 *transport_characteristic_out_uuid);
 

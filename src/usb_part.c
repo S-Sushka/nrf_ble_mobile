@@ -13,21 +13,18 @@
 
 const struct device *const uart_cdc_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 
+K_SEM_DEFINE(usb_rx_sem, 0, 1);
 
 static void usb_rx_handler(const struct device *dev, void *user_data);
 static void usb_timeout_handler(struct k_work *work);
 
 K_WORK_DELAYABLE_DEFINE(usb_timeout_work, usb_timeout_handler);
 
+static tParcingContext *resetContexByTimeout = NULL;
+static uint16_t USB_RX_TIMEOUT = 0;
 
-static uint16_t USB_RX_TIMEOUT;
 
-static tUniversalMessageRX poolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
-static uint8_t dataPoolBuffersRX_USB[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];	// Данные буферов приёма
-static tUniversalMessageRX *currentPoolBufferRX_USB = NULL;                				// Текущий буфер
-
-static tParcingProcessData context_USB; // Контекст для выполнения парсинга
-
+K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessage *), QUEUE_SIZE_USB_TX, 1);
 extern struct k_msgq parser_queue;  // Очередь парсера
 
 
@@ -59,126 +56,122 @@ int usb_begin(uint16_t rx_timeout_ms)
 		SEGGER_RTT_printf(0, " --- USB CDC ERR --- :\tRX Callback set Failed\n");
 		return err;
 	}
-	uart_irq_rx_enable(uart_cdc_dev);
-
+	uart_irq_rx_enable(uart_cdc_dev);	
 
 	SEGGER_RTT_printf(0, " --- USB CDC --- :  Successful Initialized!\n");
 	return 0;
 }
 
 
+
+// *******************************************************************
+// Коллбэки / Прерывания
+// *******************************************************************
+
 static void usb_rx_handler(const struct device *dev, void *user_data)
 {
 	ARG_UNUSED(user_data);
 
-    static uint8_t byteBuf;
-
-    int err = 0; 
-
-
-    // Проверяем, есть ли событие приёма
     if (uart_irq_update(dev) && uart_irq_rx_ready(dev)) 
 	{
-
-        while (uart_fifo_read(dev, &byteBuf, 1)) 
-		{
-			if (!context_USB.buildPacket) 
-			{
-				if (byteBuf == PROTOCOL_PREAMBLE)
-				{
-					if (getUnusedBuffer(&currentPoolBufferRX_USB, poolBuffersRX_USB, COUNT_BLE_RX_POOL_BUFFERS) == 0)
-					{
-						currentPoolBufferRX_USB->source = MESSAGE_SOURCE_USB;
-						currentPoolBufferRX_USB->length = 0;
-						currentPoolBufferRX_USB->inUse = 1;
-
-						context_USB.messageBuf = currentPoolBufferRX_USB;
-						context_USB.buildPacket = 1;    
-					}
-					else
-					{
-						SEGGER_RTT_printf(0, " --- USB ERR --- : There are no free buffers!\n");
-						k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
-						return;
-					}
-				}
-				else
-					continue;				
-			}
-
-			err = parseNextByte(byteBuf, &context_USB);
-			if (err < 0)
-			{
-				switch (err)
-				{
-				case -EMSGSIZE:
-					SEGGER_RTT_printf(0, " --- USB ERR --- :  Recieve Packet too Long!\n");
-					break;
-				case -EPROTO:
-					SEGGER_RTT_printf(0, " --- USB ERR --- :  Bad END MARK byte for recieved Packet!\n");
-					break;
-				case -EBADMSG:
-					SEGGER_RTT_printf(0, " --- USB ERR --- :  Bad CRC for recieved Packet!\n");
-					break;
-				default:
-					SEGGER_RTT_printf(0, " --- USB ERR --- :  Parse Packet Error: %d\n", err);
-					break;
-				}
-
-				k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
-				return;
-			}
-			else if (err > 0)
-			{
-				err = k_msgq_put(&parser_queue, &currentPoolBufferRX_USB, K_NO_WAIT);
-				if (err != 0)
-				{
-					SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);
-					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
-					return;
-				}
-			}
-
-			k_work_schedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем ожидание таймаута
-   		}
-
-		k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+		k_sem_give(&usb_rx_sem);
 	}	
 }
 
 static void usb_timeout_handler(struct k_work *work) 
 {
-	if (currentPoolBufferRX_USB) 
-	{
-		currentPoolBufferRX_USB->length = 0;
-		currentPoolBufferRX_USB->inUse = 0;
-	}
-	context_USB.buildPacket = 0; 
+	freeUniversalMessage(resetContexByTimeout->rxPacket);
+	freeParcingContex(resetContexByTimeout);
 
 	// SEGGER_RTT_printf(0, " --- USB DBG --- :  USB Packet RX Timeout\n");
 }
+
 
 
 // *******************************************************************
 // Поток Интерфейса
 // *******************************************************************
 
-K_MSGQ_DEFINE(usb_queue_tx, sizeof(tUniversalMessageTX), 4, 1);
-
 void usb_thread(void)
 {	
-	tUniversalMessageTX pkt;
+	int err = 0;
 
-	for (uint16_t i = 0; i < COUNT_USB_RX_POOL_BUFFERS; i++) 
-	{
-		poolBuffersRX_USB[i].data = dataPoolBuffersRX_USB[i];
-	}
+	tUniversalMessage  	*txPacket;
+	tParcingContext		rxPacketContext;
 
+	freeParcingContex(&rxPacketContext);
+	resetContexByTimeout = &rxPacketContext;
+
+
+	uint8_t byteBuf;
     while (1) 
     {
-		k_msgq_get(&usb_queue_tx, &pkt, K_FOREVER);
-		for (int i = 0; i < pkt.length; i++)
-			uart_poll_out(uart_cdc_dev, pkt.data[i]);
+		if (k_msgq_get(&usb_queue_tx, &txPacket, K_NO_WAIT) == 0) // TX
+		{
+			for (int i = 0; i < txPacket->length; i++)
+				uart_poll_out(uart_cdc_dev, txPacket->data[i]);
+
+			freeUniversalMessage(txPacket);
+		}
+
+		if (k_sem_take(&usb_rx_sem, K_NO_WAIT) == 0) // RX
+		{
+			while (uart_fifo_read(uart_cdc_dev, &byteBuf, 1))
+			{
+				k_work_reschedule(&usb_timeout_work, K_MSEC(USB_RX_TIMEOUT)); // Запускаем таймаут 
+
+				err = parseNextByte(byteBuf, &rxPacketContext);
+
+				if (err < 0) 
+				{
+					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+
+					switch (err)
+					{
+					case -EAGAIN:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Allocate New Message Failed!\n");
+						break;
+					case -ENOMEM:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Allocate Data For Message Failed!\n");
+						break;
+					case -EPROTO:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Invalid Message!\n");
+						break;
+					case -EMSGSIZE:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Too Long Message!\n");
+						break;
+					case -EBADMSG:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Message CRC Error!\n");
+						break;
+					default:
+						SEGGER_RTT_printf(0, " --- USB RX ERR --- : Parsing Error: %d\n", err);
+						break;
+					}	
+
+					freeUniversalMessage(rxPacketContext.rxPacket);
+					freeParcingContex(&rxPacketContext);
+					continue;
+				}
+
+
+				if (err > 0)
+				{
+					k_work_cancel_delayable(&usb_timeout_work); // Останавливаем ожидание таймаута
+
+					rxPacketContext.rxPacket->source = MESSAGE_SOURCE_USB;
+					err = k_msgq_put(&parser_queue, &rxPacketContext.rxPacket, K_NO_WAIT);
+					if (err != 0)
+					{
+						SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser Queue Put from BLE Error: %d\n", err);
+					}
+
+					freeParcingContex(&rxPacketContext);
+					continue;
+				}
+			}
+		}
+
+		k_yield();
     }   	
 }
 

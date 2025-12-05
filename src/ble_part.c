@@ -13,14 +13,11 @@
 
 static struct bt_conn *conns[CONFIG_BT_MAX_CONN];
 
-static struct k_work restart_adv_work;
+uint16_t BT_MTU_BUF[CONFIG_BT_MAX_CONN];
 
-
-static tUniversalMessageRX poolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS];                // Буферы приёма
-static uint8_t dataPoolBuffersRX_BLE[COUNT_BLE_RX_POOL_BUFFERS][MESSAGE_BUFFER_SIZE];   // Данные буферов приёма
-static tUniversalMessageRX *currentPoolBuffersRX_BLE[CONFIG_BT_MAX_CONN] = { NULL };    // Текущий буфер для каждого соединения 
-
-static tParcingProcessData context_BLE[CONFIG_BT_MAX_CONN]; // Контекст для выполнения парсинга
+static void ble_timeout_handler(struct k_work *work);
+static struct k_work_delayable  ble_timeout_work;
+static uint16_t BLE_RX_TIMEOUT;
 
 extern struct k_msgq parser_queue;  // Очередь парсера
 
@@ -102,22 +99,36 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 			       const struct bt_gatt_attr *attr, const void *buf,
 			       uint16_t len, uint16_t offset, uint8_t flags);
 
+void send_transport_notify_by_parts(int conn_index, tUniversalMessage *pkt);
+static void rx_transport(struct k_work *work);
+
 
 static struct bt_gatt_service transport_service;
 
-static uint8_t BT_TRANSPORT_In;
+typedef struct 
+{
+    uint8_t conn_index;
+    uint8_t BT_TRANSPORT_WRITE_Buffer_LEN;
+    struct k_work work;
+    uint8_t BT_TRANSPORT_WRITE_Buffer[CONFIG_BT_L2CAP_TX_MTU];
+} tTransportWriteWorkData;
+
+static tTransportWriteWorkData BT_TRANSPORT_WRITE_WORKS[CONFIG_BT_MAX_CONN];
+static tParcingContext	rxPacketContextBLE[CONFIG_BT_MAX_CONN];
 
 static struct bt_gatt_ccc_managed_user_data TRANSPORT_CCC = BT_GATT_CCC_MANAGED_USER_DATA_INIT(NULL, NULL, NULL);
 static uint8_t BT_TRANSPORT_NOTIFY_States[CONFIG_BT_MAX_CONN] = { 0 };
 
+uint16_t BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[CONFIG_BT_MAX_CONN]; // Счётчик чанков для отлова ошибки переполнения
+static uint8_t BT_TRANSPORT_WRITE_dummyBuffer[CONFIG_BT_L2CAP_TX_MTU];
 struct bt_gatt_attr TRANSPORT_ATTRIBUTES[] = 
 {
     BT_GATT_PRIMARY_SERVICE(NULL),
 
     BT_GATT_CHARACTERISTIC(NULL,
                         BT_GATT_CHRC_WRITE,
-                        BT_GATT_PERM_WRITE,
-                        NULL, BT_TRANSPORT_write_state, &BT_TRANSPORT_In),
+                        BT_GATT_PERM_WRITE | BT_GATT_PERM_PREPARE_WRITE,
+                        NULL, BT_TRANSPORT_write_state, BT_TRANSPORT_WRITE_dummyBuffer),
 
     BT_GATT_CHARACTERISTIC(NULL,
                         BT_GATT_CHRC_NOTIFY,
@@ -144,13 +155,24 @@ static uint8_t adv_flags = BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR;
 
 static struct bt_data adv_data[4]; 
 
+static struct k_work restart_adv_work;
+
+
 
 // *******************************************************************
 // Коллбэки Стека
 // *******************************************************************
 
+
+
 static void BT_MTU_UPDATED(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
+    int conn_index = BT_GET_INDEX_BY_CONN(conn);    
+    if (conn_index >= 0) 
+    {
+        BT_MTU_BUF[conn_index] = bt_gatt_get_mtu(conn);
+    }
+
     SEGGER_RTT_printf(0, " --- BLE --- :  Updated MTU: TX %d RX %d bytes\n", tx, rx);
 }
 
@@ -167,6 +189,8 @@ static void BT_CONNECTED(struct bt_conn *conn, uint8_t err)
             if (!conns[i]) 
             {
                 conns[i] = bt_conn_ref(conn);
+                BT_MTU_BUF[i] = bt_gatt_get_mtu(conn);
+
                 bt_addr_le_to_str(bt_conn_get_dst(conn), addr_str, BT_ADDR_STR_LEN);
 
                 k_work_submit(&restart_adv_work); // Перезапускаем Advertisement
@@ -194,11 +218,9 @@ static void BT_DISCONNECTED(struct bt_conn *conn, uint8_t reason)
             bt_conn_unref(conn);
 
             conns[i] = NULL;
-            if (currentPoolBuffersRX_BLE[i]) 
-            {
-                currentPoolBuffersRX_BLE[i]->inUse = 0;
-                currentPoolBuffersRX_BLE[i] = NULL;
-            }            
+
+	        freeUniversalMessage(rxPacketContextBLE[i].rxPacket);
+    	    freeParcingContex(&rxPacketContextBLE[i]);
 
             BT_TRANSPORT_NOTIFY_States[i] = 0;
             BT_BAS_BATTERY_LEVEL_NOTIFY_States[i] = 0;
@@ -266,14 +288,22 @@ int ble_prepare_transport_service(struct bt_uuid_128 *transport_service_uuid,
 
 
 
-int ble_begin(struct bt_uuid_128 *transport_service_uuid, 
+int ble_begin(uint16_t rx_timeout_ms, 
+            struct bt_uuid_128 *transport_service_uuid, 
             struct bt_uuid_128 *transport_characteristic_in_uuid, 
             struct bt_uuid_128 *transport_characteristic_out_uuid)
 {
     int err= 0;
     
     k_work_init(&restart_adv_work, restart_adv);
+    k_work_init_delayable(&ble_timeout_work, ble_timeout_handler);
+    for (uint16_t i = 0; i < CONFIG_BT_MAX_CONN; i++) 
+    {
+        k_work_init(&BT_TRANSPORT_WRITE_WORKS[i].work, rx_transport);
+        freeParcingContex(&rxPacketContextBLE[i]);
+    }
 
+    BLE_RX_TIMEOUT = rx_timeout_ms;
 
     // Настраиваем Advertisement
     adv_data[0].type = BT_DATA_FLAGS;
@@ -347,22 +377,20 @@ int ble_begin(struct bt_uuid_128 *transport_service_uuid,
 // Поток Интерфейса
 // *******************************************************************
 
-K_MSGQ_DEFINE(ble_queue_tx, sizeof(tUniversalMessageTX), 4, 1);
+K_MSGQ_DEFINE(ble_queue_tx, sizeof(tUniversalMessage *), QUEUE_SIZE_BLE_TX, 1);
+
 
 void ble_thread(void)
 {	
-	tUniversalMessageTX pkt;
     int conn_index = 0;
 
-    for (uint16_t i = 0; i < COUNT_BLE_RX_POOL_BUFFERS; i++) 
-    {
-        poolBuffersRX_BLE[i].data = dataPoolBuffersRX_BLE[i];
-    }
+	tUniversalMessage *pkt;
+
 
     while (1) 
     {
 		k_msgq_get(&ble_queue_tx, &pkt, K_FOREVER);
-        conn_index = pkt.source - MESSAGE_SOURCE_BLE_CONNS;
+        conn_index = pkt->source - MESSAGE_SOURCE_BLE_CONNS;
 
         // Notify
         if ( !(conn_index >= 0 && conn_index < CONFIG_BT_MAX_CONN) ) 
@@ -374,20 +402,15 @@ void ble_thread(void)
         if (!conns[conn_index])
             continue;
 
-        if (!pkt.data || pkt.length >= MESSAGE_BUFFER_SIZE) 
+        if (!pkt->data || pkt->length >= PROTOCOL_MAX_PACKET_LENGTH)
         {
             SEGGER_RTT_printf(0, " --- BLE TX ERR --- : Bad Data!\n");
             continue;
         }        
 
-        bt_conn_ref(conns[conn_index]);
-        if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY)) 
-        {
-            int err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt.data, pkt.length);
-            if (err < 0)
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
-        }
-        bt_conn_unref(conns[conn_index]);
+        send_transport_notify_by_parts(conn_index, pkt);
+
+        freeUniversalMessage(pkt);
     }   	
 }
 
@@ -548,12 +571,144 @@ ssize_t BT_NOTIFICATIONS_WRITE_CB_BATTERY_LEVEL_STATUS(struct bt_conn *conn,
 
 
 // Сервис - TRANSPORT
+
+void send_transport_notify_by_parts(int conn_index, tUniversalMessage *pkt)
+{
+    int err = 0;
+    int blockSize = 0;
+
+
+    blockSize = BT_MTU_BUF[conn_index] - 3;
+    if (blockSize <= 0)
+    {
+        return;
+    }
+
+
+    bt_conn_ref(conns[conn_index]);
+    if (bt_gatt_is_subscribed(conns[conn_index], &transport_service.attrs[4], BT_GATT_CCC_NOTIFY))
+    {
+        if (pkt->length < blockSize) // Сообщение влезет в одну посылку
+        {
+            err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data, pkt->length);
+            if (err < 0)
+                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+        }
+        else // Отправляем сообщение поблочно
+        {
+            uint16_t blocksCount = 0;
+            uint16_t offsetValue = 0;
+
+
+            blocksCount = pkt->length / blockSize;
+
+            for (int i = 0; i < blocksCount; i++)
+            {
+                offsetValue = i * blockSize;
+                err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data + offsetValue, blockSize);
+                if (err < 0)
+                {
+                    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+                    break;
+                }
+            }
+
+            if (err >= 0 && (pkt->length % blockSize) != 0) // Досылаем последнюю часть, если не влезло
+            {
+                offsetValue = blocksCount * blockSize;
+                err = bt_gatt_notify(conns[conn_index], &transport_service.attrs[4], pkt->data + offsetValue, pkt->length - blocksCount * blockSize);
+                if (err < 0)
+                    SEGGER_RTT_printf(0, " --- BLE ERR --- :  Sending Notify for \"Transport Out\" Failed: %d\n", err);
+            }
+        }
+    }
+    bt_conn_unref(conns[conn_index]);
+}
+
+static void ble_timeout_handler(struct k_work *work) 
+{
+    int conn_index = 0;
+
+	freeUniversalMessage(rxPacketContextBLE[conn_index].rxPacket);
+	freeParcingContex(&rxPacketContextBLE[conn_index]);
+
+	SEGGER_RTT_printf(0, " --- BLE DBG --- :  BLE Packet RX Timeout\n");
+}
+
+static void rx_transport(struct k_work *work)
+{
+    tTransportWriteWorkData *transportWriteWorkData = CONTAINER_OF(work, tTransportWriteWorkData, work);
+    
+    int err = 0;
+    int conn_index = transportWriteWorkData->conn_index;
+
+    uint8_t byteBuf;
+
+
+    for (int i = 0; i < transportWriteWorkData->BT_TRANSPORT_WRITE_Buffer_LEN; i++) 
+    {
+        byteBuf = transportWriteWorkData->BT_TRANSPORT_WRITE_Buffer[i];
+        err = parseNextByte(byteBuf, &rxPacketContextBLE[conn_index]);
+
+
+        k_work_reschedule(&ble_timeout_work, K_MSEC(BLE_RX_TIMEOUT)); // Запускаем таймаут 
+        if (err < 0)
+        {
+            k_work_cancel_delayable(&ble_timeout_work); // Останавливаем ожидание таймаута
+
+            switch (err)
+            {
+            case -EAGAIN:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Allocate New Message Failed!\n");
+                break;
+            case -ENOMEM:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Allocate Data For Message Failed!\n");
+                break;
+            case -EPROTO:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Invalid Message!\n");
+                break;
+            case -EMSGSIZE:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Too Long Message!\n");
+                break;
+            case -EBADMSG:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Message CRC Error!\n");
+                break;
+            default:
+                SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Parsing Error: %d\n", err);
+                break;
+            }
+
+            freeUniversalMessage(rxPacketContextBLE[conn_index].rxPacket);
+            freeParcingContex(&rxPacketContextBLE[conn_index]);
+            continue;
+        }
+
+        if (err > 0)
+        {
+            k_work_cancel_delayable(&ble_timeout_work); // Останавливаем ожидание таймаута
+
+            rxPacketContextBLE[conn_index].rxPacket->source = MESSAGE_SOURCE_BLE_CONNS + conn_index;
+            err = k_msgq_put(&parser_queue, &rxPacketContextBLE[conn_index].rxPacket, K_NO_WAIT);
+            if (err != 0)
+            {
+                SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser Queue Put from USB Error: %d\n", err);
+            }
+
+            freeParcingContex(&rxPacketContextBLE[conn_index]);
+            continue;
+        }        
+    }
+}
+
 static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
                                         const struct bt_gatt_attr *attr, const void *buf,
                                         uint16_t len, uint16_t offset, uint8_t flags)
 {
-    int err = 0;
-    
+    if (flags & BT_GATT_WRITE_FLAG_EXECUTE) // Пропускаем буфер со всеми данными после prepare write
+    {
+        return len;
+    } 
+
     int conn_index = BT_GET_INDEX_BY_CONN(conn);    
     if (conn_index < 0) 
     {
@@ -561,63 +716,50 @@ static ssize_t BT_TRANSPORT_write_state(struct bt_conn *conn,
         return BT_GATT_ERR(BT_ATT_ERR_UNLIKELY);
     }
 
-    if (len >= MESSAGE_BUFFER_SIZE)
+    if (len > PROTOCOL_MAX_PACKET_LENGTH)
 	{
 		SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Bad Data!\n");
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
 	}
 
 
-    if (getUnusedBuffer(&currentPoolBuffersRX_BLE[conn_index], poolBuffersRX_BLE, COUNT_BLE_RX_POOL_BUFFERS) == 0)
+    if (flags & BT_GATT_WRITE_FLAG_PREPARE) // Ловим ошибку с переполнением для логирования
     {
-        currentPoolBuffersRX_BLE[conn_index]->source = MESSAGE_SOURCE_BLE_CONNS + conn_index;
-        currentPoolBuffersRX_BLE[conn_index]->length = 0;
-        currentPoolBuffersRX_BLE[conn_index]->inUse = 1;
+        if (offset == 0)
+            BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index] = 0;
+        
+        BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index]++;
 
-        context_BLE[conn_index].messageBuf = currentPoolBuffersRX_BLE[conn_index];
-        context_BLE[conn_index].buildPacket = 1;        
-    }
-    else
-    {
-        SEGGER_RTT_printf(0, " --- BLE ERR --- : There are no free buffers!\n");
-        return len;
-    }
+        if (BT_TRANSPORT_WRITE_CHUNCKS_COUNTER[conn_index] > CONFIG_BT_ATT_PREPARE_COUNT)
+        {
+            SEGGER_RTT_printf(0, " --- BLE RX ERR --- : Too Many Blocks! Try to Expand MTU\n");
 
-    for (uint16_t i = 0; i < len; i++) 
-    {
-        err = parseNextByte( ((uint8_t*)buf)[i], &context_BLE[conn_index] ); 
-        if (err < 0) 
-        {
-            switch (err) 
-            {
-            case -EMSGSIZE:
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Recieve Packet too Long!\n");
-            break;
-            case -EPROTO:
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bad END MARK byte for recieved Packet!\n");
-            break;
-            case -EBADMSG:
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Bad CRC for recieved Packet!\n");
-            break;
-            default:
-                SEGGER_RTT_printf(0, " --- BLE ERR --- :  Parse Packet Error: %d\n", err);
-            break;                        
-            }
-            return len;
-        }
-        else if (err > 0) 
-        {
-            err = k_msgq_put(&parser_queue, &currentPoolBuffersRX_BLE[conn_index], K_NO_WAIT);
-            if (err != 0)
-            {
-                SEGGER_RTT_printf(0, " --- PARSER ERR --- :  Parser queue put error: %d\n", err);    
-            }
+            k_work_cancel_delayable(&ble_timeout_work); // Останавливаем ожидание таймаута
+            freeParcingContex(&rxPacketContextBLE[conn_index]);
+            return BT_GATT_ERR(BT_ATT_ERR_PREPARE_QUEUE_FULL);
         }
     }
 
+
+    if ((flags & BT_GATT_WRITE_FLAG_PREPARE) || (flags == 0)) // Часть prepare write || обычный write
+    {
+        BT_TRANSPORT_WRITE_WORKS[conn_index].conn_index = conn_index;
+        BT_TRANSPORT_WRITE_WORKS[conn_index].BT_TRANSPORT_WRITE_Buffer_LEN = len;
+        memcpy(BT_TRANSPORT_WRITE_WORKS[conn_index].BT_TRANSPORT_WRITE_Buffer, buf, len);
+
+        k_work_submit(&BT_TRANSPORT_WRITE_WORKS[conn_index].work);
+    }
+
+
+    if (flags & BT_GATT_WRITE_FLAG_PREPARE) 
+    {
+        return 0;
+    }
 
     return len;
 }
+
+
 
 ssize_t BT_NOTIFICATIONS_WRITE_CB_TRANSPORT(struct bt_conn *conn,
 			       const struct bt_gatt_attr *attr, const void *buf,

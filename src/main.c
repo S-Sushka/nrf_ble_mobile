@@ -6,7 +6,7 @@
  * All right reserved
  */
 
-
+ 
 #include "main.h"
 
 #include "parser.h"
@@ -31,7 +31,7 @@ uint16_t USB_RX_TIMEOUT_VALUE;
 // >>> MAIN <<<
 // *******************************************************************
 
-void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet);
+void incrementTestNotifyPacket(tUniversalMessage *notify_packet);
 void main_thread(void)
 {	
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
@@ -44,7 +44,7 @@ void main_thread(void)
 	settings_init_load();
 
 
-	ble_begin(&UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
+	ble_begin(500, &UUID_TRANSPORT_SERVICE, &UUID_TRANSPORT_CHARACTERISTIC_IN, &UUID_TRANSPORT_CHARACTERISTIC_OUT);
 	usb_begin(USB_RX_TIMEOUT_VALUE);
 	
 	
@@ -52,40 +52,40 @@ void main_thread(void)
 	uint8_t battery_level = 0;
 	uint8_t battery_level_status = 0;
 
-	tUniversalMessageTX notify_packet;
-	uint8_t notify_data[MESSAGE_BUFFER_SIZE];
+	tUniversalMessage notify_packet;
+	uint8_t notify_data[9];
 	notify_packet.data = notify_data;
 
 	int err = 0;
 
     while (1) 
     {
-		// BAS
-		if (battery_level >= 100)
-			battery_level = 0;
-		else
-			battery_level += 10;
-		ble_bas_set_battery_level(battery_level);
+		// // BAS
+		// if (battery_level >= 100)
+		// 	battery_level = 0;
+		// else
+		// 	battery_level += 10;
+		// ble_bas_set_battery_level(battery_level);
 
-		if (battery_level_status >= 0x0F)
-			battery_level_status = 0;
-		else
-			battery_level_status++;
-		ble_bas_set_battery_level_status(battery_level_status);	
+		// if (battery_level_status >= 0x0F)
+		// 	battery_level_status = 0;
+		// else
+		// 	battery_level_status++;
+		// ble_bas_set_battery_level_status(battery_level_status);	
 
-		// TRANSPORT
-		incrementTestNotifyPacket(&notify_packet);
+		// // TRANSPORT
+		// incrementTestNotifyPacket(&notify_packet);
 		
-		notify_packet.source = MESSAGE_SOURCE_USB;
-		err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
-        if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+		// notify_packet.source = MESSAGE_SOURCE_USB;
+		// err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
+        // if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
 
-		for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
-		{
-			notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
-			err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
-        	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
-		}
+		// for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
+		// {
+		// 	notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
+		// 	err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
+        // 	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
+		// }
 
 		k_msleep(10000);
     }   	
@@ -106,7 +106,7 @@ int settings_init_save()
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E1, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 		BT_UUID_INIT_128(BT_UUID_128_ENCODE(0xD134A7E2, 0x1824, 0x4A94, 0xAB73, 0x0637ABC923DF)),
 	};
-	uint16_t usb_rx_timeout_buf = 150;
+	uint16_t usb_rx_timeout_buf = 500;
 
 	
 	// UUIDs
@@ -197,17 +197,17 @@ int settings_init_load()
 
 		
 
-void incrementTestNotifyPacket(tUniversalMessageTX *notify_packet) 
+void incrementTestNotifyPacket(tUniversalMessage *notify_packet) 
 {
 	static uint8_t TestNotifyValue = 255;
 	TestNotifyValue++;
 
 	notify_packet->data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
-	notify_packet->data[PROTOCOL_INDEX_MT] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
-	notify_packet->data[PROTOCOL_INDEX_MC] 			= 0;
+	notify_packet->data[PROTOCOL_INDEX_MSG_TYPE] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
+	notify_packet->data[PROTOCOL_INDEX_MSG_CODE] 			= 0;
 
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN] 		= 0;
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN+1] 	= 1;
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN_MSB] 		= 0;
+	notify_packet->data[PROTOCOL_INDEX_PL_LEN_LSB] 	= 1;
 
 	notify_packet->data[PROTOCOL_INDEX_PL_START] 	= TestNotifyValue;
 

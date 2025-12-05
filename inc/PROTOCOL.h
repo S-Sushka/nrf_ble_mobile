@@ -13,12 +13,17 @@
 #include <zephyr/kernel.h>
 
 
-#define MAX_PL_PACKET_LENGTH		4096
 
-#define MESSAGE_BUFFER_SIZE			5000 	// Размер для буферов обмена
-#define COUNT_BLE_RX_POOL_BUFFERS	4
-#define COUNT_USB_RX_POOL_BUFFERS	4
+#define UNIVERSAL_TRANSPORT_HEAP_SIZE	16384
 
+#define QUEUE_SIZE_USB_TX	64
+#define QUEUE_SIZE_BLE_TX	32
+
+#define QUEUE_SIZE_PARSER	16
+
+
+
+extern struct k_heap UniversalTransportHeap;
 
 typedef enum 
 {
@@ -32,17 +37,21 @@ typedef struct
 
 	uint8_t *data;  		// Указатель на передаваемое сообщение 
 	uint16_t length;		// Длина передаваемого сообщения
-} tUniversalMessageTX;
+} tUniversalMessage;
 
-typedef struct
+
+typedef struct 
 {
-	tMessageSources source; 			// Номер источника. Всё, что >= MESSAGE_SOURCE_BLE_CONNS - индексы BLE подключений
+	tUniversalMessage *rxPacket;
 
-	uint8_t *data;						// Указатель на буфер принимаемого сообщения
-	uint16_t length;    				// Длина принимаемого сообщения
+	uint16_t payloadLength;
+	uint16_t checksumBuffer;
+} tParcingContext;
 
-	uint8_t inUse;						// Флаг занятости буфера. После того, как обработали данные, записываем 0
-} tUniversalMessageRX;
+
+
+void freeUniversalMessage(tUniversalMessage *packet);
+void freeParcingContex(tParcingContext *context);
 
 
 
@@ -50,11 +59,19 @@ typedef struct
 #define PROTOCOL_END_MARK 0x7E
 
 
-#define PROTOCOL_INDEX_PREAMBLE 0
-#define PROTOCOL_INDEX_MT		1
-#define PROTOCOL_INDEX_MC		2
-#define PROTOCOL_INDEX_PL_LEN	3
-#define PROTOCOL_INDEX_PL_START	5
+#define PROTOCOL_INDEX_PREAMBLE		0
+#define PROTOCOL_INDEX_MSG_TYPE		1
+#define PROTOCOL_INDEX_MSG_CODE		2
+#define PROTOCOL_INDEX_PL_LEN_MSB	3
+#define PROTOCOL_INDEX_PL_LEN_LSB	4
+#define PROTOCOL_INDEX_PL_START		5
+
+
+#define PROTOCOL_END_PART_SIZE	3 // End Mark + CRC
+
+
+#define PROTOCOL_MAX_PL_PACKET_LENGTH	4096
+#define PROTOCOL_MAX_PACKET_LENGTH		PROTOCOL_INDEX_PL_START + PROTOCOL_MAX_PL_PACKET_LENGTH + PROTOCOL_END_PART_SIZE
 
 
 #define PROTOCOL_MSG_TYPE_PR_COMMAND	0x00
@@ -69,6 +86,10 @@ typedef struct
 #define PROTOCOL_MSG_TYPE_CRISP_ANSWER	0xE6
 #define PROTOCOL_MSG_TYPE_CRISP_NOTIFY	0xE7
 
+#define PROTOCOL_MSG_TYPES { PROTOCOL_MSG_TYPE_PR_COMMAND, PROTOCOL_MSG_TYPE_PR_ANSWER, PROTOCOL_MSG_TYPE_PR_NOTIFY, \
+						PROTOCOL_MSG_TYPE_COMMAND, PROTOCOL_MSG_TYPE_ANSWER, PROTOCOL_MSG_TYPE_NOTIFY, \
+						PROTOCOL_MSG_TYPE_CRISP_COMMAND, PROTOCOL_MSG_TYPE_CRISP_ANSWER, PROTOCOL_MSG_TYPE_CRISP_NOTIFY }
+
 
 #define PROTOCOL_MSG_CODE_GET_DEVICE_INFO		0x01
 #define PROTOCOL_MSG_CODE_DO_SELF_CHECK			0x02
@@ -81,20 +102,11 @@ typedef struct
 #define PROTOCOL_MSG_CODE_SET_LIFE_CYCLE		0xF1
 
 
+int protocolCheckMT(uint8_t MT);
+int protocolCheckPayloadLength(uint16_t length);
 
 uint16_t calculateCRC(uint8_t *data, uint16_t length);
-int getUnusedBuffer(tUniversalMessageRX **ptrBuffer, tUniversalMessageRX *poolBuffers, uint16_t poolBuffersLen);
 
-
-typedef struct 
-{
-	tUniversalMessageRX *messageBuf;
-
-    uint16_t lenPayloadBuf;
-    uint16_t crcValueBuf;
-
-    uint8_t buildPacket;
-} tParcingProcessData;
 
 /*
 	Универсальная функция для парсинга приходящих пакетов. 
@@ -102,4 +114,6 @@ typedef struct
 	Возвращает <0 - если ошибка; 0 - если байт запарсен успешно; >0 - длина, если пакет запарсен успешно
 */
 
-int parseNextByte(uint8_t newByte, tParcingProcessData *context);
+int parseNextByte(uint8_t newByte, tParcingContext *context);
+
+
