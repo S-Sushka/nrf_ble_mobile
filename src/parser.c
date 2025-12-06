@@ -9,6 +9,7 @@
 
 #include "parser.h"
 
+#include "nvs_part.h"
 #include "ble_part.h"
 #include "usb_part.h"
 
@@ -123,11 +124,31 @@ tUniversalMessage *parsePRCommand(tUniversalMessage *pkt)
 tUniversalMessage *parseCommand(tUniversalMessage *pkt) 
 {
     tUniversalMessage *pkt_answer = NULL;
+    uint16_t answerSize = 0;
 
-    switch (pkt_request->data[PROTOCOL_INDEX_MSG_CODE])
+    switch (pkt->data[PROTOCOL_INDEX_MSG_CODE])
     {
     case PROTOCOL_MSG_CODE_GET_DEVICE_INFO:
-        
+        answerSize = PROTOCOL_INDEX_PL_START + PROTOCOL_PL_SIZE_DEVICE_INFO + PROTOCOL_END_PART_SIZE;
+
+        pkt_answer = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
+
+        pkt_answer->source = pkt->source;
+        pkt_answer->length = answerSize;        
+        pkt_answer->data = k_heap_alloc(&UniversalTransportHeap, answerSize, K_NO_WAIT);
+
+        uint8_t sn_buf[NVS_SIZE_FD_TAG_SN];
+        uint8_t md_buf[NVS_SIZE_FD_TAG_MODEL];
+        uint8_t id_buf[NVS_SIZE_FD_TAG_ANALOG_BOARD_ID];
+
+        factory_data_load_fd_tag_sn(sn_buf);
+        factory_data_load_fd_tag_model(md_buf);
+        factory_data_load_fd_tag_analog_board_id(id_buf);
+
+        SEGGER_RTT_printf(0, "SN: %x %x %x %x\n", sn_buf[0], sn_buf[1], sn_buf[2], sn_buf[3]);
+        SEGGER_RTT_printf(0, "MODEL: %x %x %x\n", md_buf[0], md_buf[1], md_buf[2]);
+        SEGGER_RTT_printf(0, "ID: %x\n", id_buf[0]);
+
     break;
     }
 
