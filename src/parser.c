@@ -13,82 +13,137 @@
 #include "usb_part.h"
 
 
-
-
 K_MSGQ_DEFINE(parser_queue, sizeof(tUniversalMessage *), QUEUE_SIZE_PARSER, 1);
 
+
+tUniversalMessage *parsePRCommand(tUniversalMessage *pkt);
+tUniversalMessage *parseCommand(tUniversalMessage *pkt);
+tUniversalMessage *parseCRISPCommand(tUniversalMessage *pkt);
+
+
+
+// *******************************************************************
+// Поток Парсера
+// *******************************************************************
 
 void parser_thread()
 {
     int err = 0;
 
-    tUniversalMessage *pkt;   
-    tUniversalMessage *pkt_echo = NULL;
+    tUniversalMessage *pkt_request;   
+    tUniversalMessage *pkt_answer;
     
 
     while (1) 
     {
-        k_msgq_get(&parser_queue, &pkt, K_FOREVER);
-        _DEBUG_printBuffer("RX", pkt->data, pkt->length);
+        k_msgq_get(&parser_queue, &pkt_request, K_FOREVER); // Принимаем
+        _DEBUG_printBuffer("RX", pkt_request->data, pkt_request->length);
 
-
-        if (pkt->data[PROTOCOL_INDEX_MSG_TYPE] == PROTOCOL_MSG_TYPE_PR_COMMAND) 
+        switch (pkt_request->data[PROTOCOL_INDEX_MSG_TYPE]) // Обрабатываем
         {
-            pkt_echo = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
-            if (!pkt_echo) 
+        case PROTOCOL_MSG_TYPE_PR_COMMAND:
+            pkt_answer = parsePRCommand(pkt_request);
+        break;
+        case PROTOCOL_MSG_TYPE_COMMAND:
+            pkt_answer = parseCommand(pkt_request);
+        break;
+        case PROTOCOL_MSG_TYPE_CRISP_COMMAND:
+            pkt_answer = parseCRISPCommand(pkt_request);
+        break;                
+        }
+
+        if (pkt_answer) // Отвечаем
+        {
+            _DEBUG_printBuffer("TX", pkt_answer->data, pkt_answer->length);
+            if (pkt_request->source == MESSAGE_SOURCE_USB)
             {
-                SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Echo Message Failed!\n");
-                continue;
-            }
-
-            pkt_echo->source = pkt->source;
-            pkt_echo->length = pkt->length;
-            pkt_echo->data = k_heap_alloc(&UniversalTransportHeap, pkt->length, K_NO_WAIT);
-            if (!pkt_echo->data) 
-            {
-                SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Data For Echo Message Failed!\n");
-                continue;
-            }
-
-            for (int i = 0; i < pkt->length; i++) 
-               pkt_echo->data[i] = pkt->data[i];
-
-            uint16_t crcCalculatedBuf = 0;
-            uint16_t payloadLenBuf = 0;
-
-
-            pkt_echo->data[PROTOCOL_INDEX_MSG_TYPE] = PROTOCOL_MSG_TYPE_PR_ANSWER;
-
-            payloadLenBuf = pkt_echo->data[PROTOCOL_INDEX_PL_LEN_MSB];
-            payloadLenBuf <<= 8;
-            payloadLenBuf |= pkt_echo->data[PROTOCOL_INDEX_PL_LEN_LSB];
-
-            crcCalculatedBuf = calculateCRC(pkt_echo->data, payloadLenBuf+PROTOCOL_INDEX_PL_START+1);
-
-            pkt_echo->data[payloadLenBuf+PROTOCOL_INDEX_PL_START+2] = crcCalculatedBuf;
-            crcCalculatedBuf >>= 8;
-            pkt_echo->data[payloadLenBuf+PROTOCOL_INDEX_PL_START+1] = crcCalculatedBuf;
-
-            _DEBUG_printBuffer("TX", pkt_echo->data, pkt_echo->length);
-            if (pkt->source == MESSAGE_SOURCE_USB)
-            {
-                err = k_msgq_put(&usb_queue_tx, &pkt_echo, K_NO_WAIT);
+                err = k_msgq_put(&usb_queue_tx, &pkt_answer, K_NO_WAIT);
                 if (err != 0)
                     SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
             }
             else
             {
-                err = k_msgq_put(&ble_queue_tx, &pkt_echo, K_NO_WAIT);
+                err = k_msgq_put(&ble_queue_tx, &pkt_answer, K_NO_WAIT);
                 if (err != 0)
                     SEGGER_RTT_printf(0, " --- BLE TX ERR --- :  BLE TX Queue put error: %d\n", err);
             }
         }
 
-        freeUniversalMessage(pkt);
+        freeUniversalMessage(pkt_request);
     }
 }
+
 K_THREAD_DEFINE(parser_thread_id, THREAD_STACK_SIZE_PARSER, parser_thread, NULL, NULL, NULL, THREAD_PRIORITY_PARSER, 0, 0);
 
+
+
+// *******************************************************************
+// Функции обработки пакетов
+// *******************************************************************
+
+tUniversalMessage *parsePRCommand(tUniversalMessage *pkt) 
+{
+    tUniversalMessage *pkt_answer = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
+    if (!pkt_answer)
+    {
+        SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Answer Message Failed!\n");
+        return NULL;
+    }
+
+    pkt_answer->source = pkt->source;
+    pkt_answer->length = pkt->length;
+    pkt_answer->data = k_heap_alloc(&UniversalTransportHeap, pkt->length, K_NO_WAIT);
+    if (!pkt_answer->data)
+    {
+        SEGGER_RTT_printf(0, " --- PARSER ERR --- : Allocate Data For Answer Message Failed!\n");
+        return NULL;
+    }
+
+    for (int i = 0; i < pkt->length; i++)
+        pkt_answer->data[i] = pkt->data[i];
+
+    uint16_t crcCalculatedBuf = 0;
+    uint16_t payloadLenBuf = 0;
+
+    pkt_answer->data[PROTOCOL_INDEX_MSG_TYPE] = PROTOCOL_MSG_TYPE_PR_ANSWER;
+
+    payloadLenBuf = pkt_answer->data[PROTOCOL_INDEX_PL_LEN_MSB];
+    payloadLenBuf <<= 8;
+    payloadLenBuf |= pkt_answer->data[PROTOCOL_INDEX_PL_LEN_LSB];
+
+    crcCalculatedBuf = calculateCRC(pkt_answer->data, payloadLenBuf + PROTOCOL_INDEX_PL_START + 1);
+
+    pkt_answer->data[payloadLenBuf + PROTOCOL_INDEX_PL_START + 2] = crcCalculatedBuf;
+    crcCalculatedBuf >>= 8;
+    pkt_answer->data[payloadLenBuf + PROTOCOL_INDEX_PL_START + 1] = crcCalculatedBuf;
+
+    return pkt_answer;
+}
+
+tUniversalMessage *parseCommand(tUniversalMessage *pkt) 
+{
+    tUniversalMessage *pkt_answer = NULL;
+
+    switch (pkt_request->data[PROTOCOL_INDEX_MSG_CODE])
+    {
+    case PROTOCOL_MSG_CODE_GET_DEVICE_INFO:
+        
+    break;
+    }
+
+    return pkt_answer;
+}
+
+tUniversalMessage *parseCRISPCommand(tUniversalMessage *pkt) 
+{
+    return NULL;
+}
+
+
+
+// *******************************************************************
+// Отладка
+// *******************************************************************
 
 void _DEBUG_printBuffer(const char *prefix, uint8_t *data, uint16_t length) 
 {
