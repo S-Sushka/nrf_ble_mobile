@@ -35,7 +35,7 @@ uint16_t BLE_RX_TIMEOUT_VALUE;
 // >>> MAIN <<<
 // *******************************************************************
 
-void incrementTestNotifyPacket(tUniversalMessage *notify_packet);
+void incrementTestNotifyData(uint8_t *notify_data);
 void main_thread(void)
 {	
 	int err = 0;
@@ -45,8 +45,7 @@ void main_thread(void)
 
 
 	settings_subsys_init();
-	err = settings_init_save();
-	SEGGER_RTT_printf(0, "Init Save: %d\n", err);
+	settings_init_save();
 
 	user_data_load_uuid_service(&UUID_TRANSPORT_SERVICE);
 	user_data_load_uuid_characteristic_in(&UUID_TRANSPORT_CHARACTERISTIC_IN);
@@ -64,38 +63,54 @@ void main_thread(void)
 	uint8_t battery_level = 0;
 	uint8_t battery_level_status = 0;
 
-	tUniversalMessage notify_packet;
+
+	tUniversalMessage *notify_packet_usb;
+   	tUniversalMessage *notify_packet_ble;
 	uint8_t notify_data[9];
-	notify_packet.data = notify_data;
 
     while (1) 
     {
-		// // BAS
-		// if (battery_level >= 100)
-		// 	battery_level = 0;
-		// else
-		// 	battery_level += 10;
-		// ble_bas_set_battery_level(battery_level);
+		// BAS
+		if (battery_level >= 100)
+			battery_level = 0;
+		else
+			battery_level += 10;
+		ble_bas_set_battery_level(battery_level);
 
-		// if (battery_level_status >= 0x0F)
-		// 	battery_level_status = 0;
-		// else
-		// 	battery_level_status++;
-		// ble_bas_set_battery_level_status(battery_level_status);	
+		if (battery_level_status >= 0x0F)
+			battery_level_status = 0;
+		else
+			battery_level_status++;
+		ble_bas_set_battery_level_status(battery_level_status);	
 
-		// // TRANSPORT
-		// incrementTestNotifyPacket(&notify_packet);
+		// TRANSPORT
+		incrementTestNotifyData(notify_data);
 		
-		// notify_packet.source = MESSAGE_SOURCE_USB;
-		// err = k_msgq_put(&usb_queue_tx, &notify_packet, K_NO_WAIT);
-        // if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+		// Notify Test USB
+		notify_packet_usb = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
+		notify_packet_usb->length = 9;
+		notify_packet_usb->data = k_heap_alloc(&UniversalTransportHeap, notify_packet_usb->length, K_NO_WAIT); 
+		for (int i = 0; i < notify_packet_usb->length; i++)
+			notify_packet_usb->data[i] = notify_data[i];
 
-		// for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
-		// {
-		// 	notify_packet.source = MESSAGE_SOURCE_BLE_CONNS + i;
-		// 	err = k_msgq_put(&ble_queue_tx, &notify_packet, K_NO_WAIT);
-        // 	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
-		// }
+		notify_packet_usb->source = MESSAGE_SOURCE_USB;
+		err = k_msgq_put(&usb_queue_tx, &notify_packet_usb, K_NO_WAIT);
+        if (err != 0) SEGGER_RTT_printf(0, " --- USB TX ERR --- :  USB TX Queue put error: %d\n", err);
+
+		// Notify Test BLE
+		for (int i = 0; i < CONFIG_BT_MAX_CONN; i++) 
+		{
+			notify_packet_ble = k_heap_alloc(&UniversalTransportHeap, sizeof(tUniversalMessage), K_NO_WAIT);
+			notify_packet_ble->length = 9;
+			notify_packet_ble->data = k_heap_alloc(&UniversalTransportHeap, notify_packet_ble->length, K_NO_WAIT); 
+			for (int i = 0; i < notify_packet_ble->length; i++)
+				notify_packet_ble->data[i] = notify_data[i];
+
+			notify_packet_ble->source = MESSAGE_SOURCE_BLE_CONNS + i;
+			err = k_msgq_put(&ble_queue_tx, &notify_packet_ble, K_NO_WAIT);
+        	if (err != 0) SEGGER_RTT_printf(0, " --- BLE TX ERR --- : BLE TX Queue put error: %d\n", err);
+		}
+		
 
 		k_msleep(10000);
     }   	
@@ -106,26 +121,24 @@ K_THREAD_DEFINE(main_thread_id, THREAD_STACK_SIZE_MAIN, main_thread, NULL, NULL,
 
 
 
-void incrementTestNotifyPacket(tUniversalMessage *notify_packet) 
+void incrementTestNotifyData(uint8_t *notify_data) 
 {
 	static uint8_t TestNotifyValue = 255;
 	TestNotifyValue++;
 
-	notify_packet->data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
-	notify_packet->data[PROTOCOL_INDEX_MSG_TYPE] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
-	notify_packet->data[PROTOCOL_INDEX_MSG_CODE] 			= 0;
+	notify_data[PROTOCOL_INDEX_PREAMBLE] 	= PROTOCOL_PREAMBLE;
+	notify_data[PROTOCOL_INDEX_MSG_TYPE] 			= PROTOCOL_MSG_TYPE_PR_NOTIFY;
+	notify_data[PROTOCOL_INDEX_MSG_CODE] 			= 0;
 
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN_MSB] 		= 0;
-	notify_packet->data[PROTOCOL_INDEX_PL_LEN_LSB] 	= 1;
+	notify_data[PROTOCOL_INDEX_PL_LEN_MSB] 		= 0;
+	notify_data[PROTOCOL_INDEX_PL_LEN_LSB] 	= 1;
 
-	notify_packet->data[PROTOCOL_INDEX_PL_START] 	= TestNotifyValue;
+	notify_data[PROTOCOL_INDEX_PL_START] 	= TestNotifyValue;
 
-	notify_packet->data[PROTOCOL_INDEX_PL_START+1] 	= PROTOCOL_END_MARK;
+	notify_data[PROTOCOL_INDEX_PL_START+1] 	= PROTOCOL_END_MARK;
 
-	uint16_t crcCalculatedBuf = calculateCRC(notify_packet->data, PROTOCOL_INDEX_PL_START+2);
-	notify_packet->data[PROTOCOL_INDEX_PL_START+2] 	= crcCalculatedBuf & 0x00FF;
+	uint16_t crcCalculatedBuf = calculateCRC(notify_data, PROTOCOL_INDEX_PL_START+2);
+	notify_data[PROTOCOL_INDEX_PL_START+2] 	= crcCalculatedBuf & 0x00FF;
 	crcCalculatedBuf >>= 8;
-	notify_packet->data[PROTOCOL_INDEX_PL_START+3] 	= crcCalculatedBuf & 0x00FF;
-
-	notify_packet->length = 9;
+	notify_data[PROTOCOL_INDEX_PL_START+3] 	= crcCalculatedBuf & 0x00FF;
 }
