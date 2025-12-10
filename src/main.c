@@ -30,6 +30,97 @@ uint16_t BLE_RX_TIMEOUT_VALUE;
 
 
 
+#include <psa/crypto.h>
+#include <psa/crypto_extra.h>
+
+void printKCV(uint8_t *kcv, uint16_t len)
+{
+	SEGGER_RTT_printf(0, "KCV: ");
+	for (int i = 0; i < len; i++) 
+	{
+		if (kcv[i] < 0x10)
+			SEGGER_RTT_printf(0, "0");
+		SEGGER_RTT_printf(0, "%x", kcv[i]);
+	}
+	SEGGER_RTT_printf(0, "\n");
+}
+
+static psa_key_id_t key_id;
+int crypto_init(void)
+{
+	if (psa_crypto_init() != PSA_SUCCESS)
+	{
+		SEGGER_RTT_printf(0, "PSA Init Failed!\n");
+		return -1;
+	}
+	return 0;
+}
+
+int import_key(void)
+{
+	psa_status_t status;
+
+	uint8_t key_val[] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };
+	psa_key_attributes_t key_attributes = PSA_KEY_ATTRIBUTES_INIT;
+
+
+	psa_set_key_usage_flags(&key_attributes, PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
+	psa_set_key_lifetime(&key_attributes, PSA_KEY_LIFETIME_VOLATILE);
+	psa_set_key_algorithm(&key_attributes, PSA_ALG_ECB_NO_PADDING);
+	psa_set_key_type(&key_attributes, PSA_KEY_TYPE_AES);
+	psa_set_key_bits(&key_attributes, 128);
+
+	
+	status = psa_import_key(&key_attributes, key_val, sizeof(key_val), &key_id);
+	if (status != PSA_SUCCESS) 
+	{
+		SEGGER_RTT_printf(0, "Key Import Failed: %d\n", status);
+		return -1;
+	}	
+
+	psa_reset_key_attributes(&key_attributes);
+	return 0;
+}
+
+int encrypt_cbc_aes(void)
+{
+	uint32_t olen;
+	psa_status_t status;
+	psa_cipher_operation_t operation = PSA_CIPHER_OPERATION_INIT;
+
+	uint8_t data_in_val[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t data_out_val[sizeof(data_in_val)];
+
+	status = psa_cipher_encrypt_setup(&operation, key_id, PSA_ALG_ECB_NO_PADDING);
+	if (status != PSA_SUCCESS) 
+	{
+		SEGGER_RTT_printf(0, "psa_cipher_encrypt_setup failed! (Error: %d)\n", status);
+		return -1;
+	}
+
+	status = psa_cipher_update(&operation, data_in_val, sizeof(data_in_val), 
+						data_out_val, sizeof(data_out_val), 
+						&olen);
+	if (status != PSA_SUCCESS) {
+		SEGGER_RTT_printf(0, "psa_cipher_update failed! (Error: %d)\n", status);
+		return -1;
+	}
+
+	status = psa_cipher_finish(&operation, data_out_val + olen,
+				   sizeof(data_out_val) - olen,
+				   &olen);
+	if (status != PSA_SUCCESS) 
+	{
+		SEGGER_RTT_printf(0, "psa_cipher_finish failed! (Error: %d)\n", status);
+		return -1;
+	}
+
+	printKCV(data_out_val, 4);
+	psa_cipher_abort(&operation);
+
+	return 0;
+}
+
 
 // *******************************************************************
 // >>> MAIN <<<
@@ -43,9 +134,18 @@ void main_thread(void)
 	gpio_pin_configure_dt(&led0_dev, GPIO_OUTPUT);
 	gpio_pin_set_dt(&led0_dev, 1);
 
+	crypto_init();
+	import_key();
+	encrypt_cbc_aes();
+
+	while (1) 
+	{
+		k_msleep(10000);
+	}
+
 
 	settings_subsys_init();
-	settings_init_save();
+	SEGGER_RTT_printf(0, "Save Res: %d\n", settings_init_save());
 
 	user_data_load_uuid_service(&UUID_TRANSPORT_SERVICE);
 	user_data_load_uuid_characteristic_in(&UUID_TRANSPORT_CHARACTERISTIC_IN);
