@@ -8,7 +8,9 @@ target_include_directories(app PRIVATE inc)
 target_sources(app PRIVATE
     ${ZEPHYR_BASE}/../modules/debug/segger/SEGGER/SEGGER_RTT_printf.c
     src/PROTOCOL.c
+    src/packet_build.c
     src/parser.c
+    src/nvs_part.c
     src/ble_part.c
     src/usb_part.c
     src/main.c

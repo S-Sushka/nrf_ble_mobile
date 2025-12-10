@@ -1,5 +1,54 @@
-storage:
-  address: 0xF0000
-  size: 0x10000
-  device: flash_controller
-  region: flash_primary
+partitions:
+  # ------------- NSIB (B0, immutable) -------------
+  b0:
+    region: flash_primary
+    address: 0x00000000
+    size:    0x00008000   # 32 KiB типично для NSIB
+    alignment: 0x1000
+    placement:
+      before: [s0]
+ 
+  # ------------- MCUboot (self-updatable, offset swap) -------------
+  s0:                      # MCUboot primary
+    region: flash_primary
+    address: 0x00008000
+    size:    0x00010000   # 64 KiB (запас сверх офиц. дефолта 48 KiB)
+    alignment: 0x1000
+ 
+  s1:                      # MCUboot secondary (на 1 сектор больше для SWAP_USING_OFFSET)
+    region: flash_primary
+    address: 0x00018000
+    size:    0x00011000   # 68 KiB (=64 KiB + 4 KiB)
+    alignment: 0x1000
+ 
+  # ------------- Приложение (offset swap) -------------
+  app_primary:         # app slot 0 (primary)
+    region: flash_primary
+    address: 0x00029000
+    size:    0x00066000   # 408 KiB минус трейлер внутри слота
+    alignment: 0x1000
+ 
+  app_secondary:       # app slot 1 (secondary; больше на 2 сектора)
+    region: flash_primary
+    address: 0x0008F000
+    size:    0x00068000   # 416 KiB; ≥ +1 сектор к primary (здесь +2)
+    alignment: 0x1000
+ 
+  # ------------- Хвост: NVS, HUK, factory_data -------------
+  storage:                 # NVS/settings (минимум 16 KiB)
+    region: flash_primary
+    address: 0x000F7000
+    size:    0x00004000   # 16 KiB
+    alignment: 0x1000
+ 
+  hw_unique_key_partition:                     # HUK хранилище (страница 4 KiB; внутри 1 KiB)
+    region: flash_primary
+    address: 0x000FB000
+    size:    0x00001000   # 4 KiB = 1 страница (требование флеш)
+    alignment: 0x1000
+ 
+  factory_data:            # серийники/ключи/политики
+    region: flash_primary
+    address: 0x000FC000
+    size:    0x00004000   # 16 KiB
+    alignment: 0x1000

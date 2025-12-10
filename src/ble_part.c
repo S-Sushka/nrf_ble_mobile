@@ -163,8 +163,6 @@ static struct k_work restart_adv_work;
 // Коллбэки Стека
 // *******************************************************************
 
-
-
 static void BT_MTU_UPDATED(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
     int conn_index = BT_GET_INDEX_BY_CONN(conn);    
